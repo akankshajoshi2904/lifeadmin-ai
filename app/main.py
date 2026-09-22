@@ -1,6 +1,7 @@
 import streamlit as st
 
 from utils.pdf_reader import extract_text_from_pdf
+from document_analyzer import analyze_document
 
 
 st.set_page_config(
@@ -18,9 +19,7 @@ st.write(
     "will help identify important information and actions."
 )
 
-
 st.divider()
-
 
 st.header("📄 Upload a Document")
 
@@ -42,12 +41,43 @@ if uploaded_file is not None:
 
         if extracted_text.strip():
 
-            st.subheader("Extracted Text")
+            st.subheader("📄 Extracted Text")
 
             st.text_area(
                 "Document content",
                 extracted_text,
-                height=400
+                height=300
+            )
+
+            st.divider()
+
+            st.subheader("🤖 Document Analysis")
+
+            analysis = analyze_document(extracted_text)
+
+            st.write(
+                "**Document Type:**",
+                analysis["document_type"]
+            )
+
+            st.write(
+                "**Important Date:**",
+                analysis["important_date"]
+            )
+
+            st.write(
+                "**Amount:**",
+                analysis["amount"]
+            )
+
+            st.write(
+                "**Action Required:**",
+                analysis["action_required"]
+            )
+
+            st.write(
+                "**Priority:**",
+                analysis["priority"]
             )
 
         else:
