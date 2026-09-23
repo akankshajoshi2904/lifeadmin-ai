@@ -16,8 +16,17 @@ print(result["user_request"])
 print("\nCurrent Step:")
 print(result["current_step"])
 
-print("\nTasks:")
-print(result["tasks"])
+print("\nPrioritized Tasks:")
+
+for task in result["tasks"]:
+
+    print(
+        f"- {task['title']} | "
+        f"Due: {task['due_date']} | "
+        f"Priority: {task['priority']} | "
+        f"Urgency: {task['urgency']}"
+    )
+
 
 print("\nAgent Response:")
 print(result["response"])

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from langgraph.graph import StateGraph, START, END
 
 from app.agents.state import AgentState
@@ -15,51 +17,118 @@ def get_tasks_node(state: AgentState):
     return state
 
 
+def prioritize_tasks_node(state: AgentState):
+    """Prioritize pending tasks based on priority and deadline."""
+
+    today = datetime.now()
+
+    prioritized_tasks = []
+
+    for task in state.tasks:
+
+        task_id = task[0]
+        title = task[1]
+        due_date = task[2]
+        priority = task[3]
+        status = task[4]
+
+        if status != "Pending":
+            continue
+
+        try:
+            due = datetime.strptime(
+                due_date,
+                "%d %B %Y"
+            )
+
+            days_left = (due - today).days
+
+        except (ValueError, TypeError):
+            days_left = 9999
+
+        if days_left < 0:
+            urgency = "Overdue"
+
+        elif days_left <= 7:
+            urgency = "Due Soon"
+
+        elif days_left <= 30:
+            urgency = "Upcoming"
+
+        else:
+            urgency = "Later"
+
+        prioritized_tasks.append({
+            "id": task_id,
+            "title": title,
+            "due_date": due_date,
+            "priority": priority,
+            "status": status,
+            "days_left": days_left,
+            "urgency": urgency,
+        })
+
+    prioritized_tasks.sort(
+        key=lambda task: (
+            task["days_left"],
+            task["priority"] != "High"
+        )
+    )
+
+    state.tasks = prioritized_tasks
+    state.current_step = "Tasks prioritized"
+
+    return state
+
+
 def summarize_tasks_node(state: AgentState):
-    """Create a simple summary from the tasks."""
+    """Create a summary from prioritized tasks."""
 
     if not state.tasks:
 
-        state.response = "You have no tasks."
+        state.response = "You have no pending tasks."
 
     else:
 
-        pending_tasks = [
+        due_soon = [
             task
             for task in state.tasks
-            if task[4] == "Pending"
+            if task["urgency"] in ["Overdue", "Due Soon"]
         ]
 
-        if not pending_tasks:
+        high_priority = [
+            task
+            for task in state.tasks
+            if task["priority"] == "High"
+        ]
 
-            state.response = "You have no pending tasks."
-
-        else:
-
-            high_priority = [
-                task
-                for task in pending_tasks
-                if task[3] == "High"
-            ]
-
-            state.response = (
-                f"You have {len(pending_tasks)} pending task(s). "
-                f"{len(high_priority)} are high priority."
-            )
+        state.response = (
+            f"You have {len(state.tasks)} pending task(s). "
+            f"{len(high_priority)} are high priority. "
+            f"{len(due_soon)} need attention within the next 7 days."
+        )
 
     state.current_step = "Tasks summarized"
 
     return state
 
 
-# Create the graph
+# -----------------------------------
+# Create LangGraph workflow
+# -----------------------------------
+
 graph = StateGraph(AgentState)
 
 
-# Add workflow nodes
+# Add nodes
 graph.add_node(
     "get_tasks",
     get_tasks_node
+)
+
+graph.add_node(
+    "prioritize_tasks",
+    prioritize_tasks_node
 )
 
 graph.add_node(
@@ -76,6 +145,11 @@ graph.add_edge(
 
 graph.add_edge(
     "get_tasks",
+    "prioritize_tasks"
+)
+
+graph.add_edge(
+    "prioritize_tasks",
     "summarize_tasks"
 )
 
@@ -85,5 +159,5 @@ graph.add_edge(
 )
 
 
-# Compile the agent
+# Compile agent
 lifeadmin_agent = graph.compile()
