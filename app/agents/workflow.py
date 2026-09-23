@@ -87,6 +87,24 @@ def plan_next_action_node(state: AgentState):
     return state
 
 
+def prepare_execution_node(state: AgentState):
+    """Prepare the highest-priority planned task for execution."""
+    if not state.tasks:
+        state.current_step = "No action available"
+        return state
+
+    next_task = state.tasks[0]
+
+    state.response = (
+        f"Execution prepared for task {next_task['id']}: "
+        f"{next_task['title']}"
+    )
+
+    state.current_step = "Execution prepared"
+
+    return state
+
+
 def summarize_tasks_node(state: AgentState):
     """Create a summary from the prioritized tasks and plan."""
     if not state.tasks:
@@ -110,7 +128,8 @@ def summarize_tasks_node(state: AgentState):
             f"You have {len(state.tasks)} pending task(s). "
             f"{len(high_priority)} are high priority. "
             f"{len(due_soon)} need attention within the next 7 days. "
-            f"Your next action should be: {next_action}."
+            f"Your next action should be: {next_action}. "
+            f"Execution has been prepared for approval."
         )
 
     state.current_step = "Tasks summarized"
@@ -123,12 +142,14 @@ graph = StateGraph(AgentState)
 graph.add_node("get_tasks", get_tasks_node)
 graph.add_node("prioritize_tasks", prioritize_tasks_node)
 graph.add_node("plan_next_action", plan_next_action_node)
+graph.add_node("prepare_execution", prepare_execution_node)
 graph.add_node("summarize_tasks", summarize_tasks_node)
 
 graph.add_edge(START, "get_tasks")
 graph.add_edge("get_tasks", "prioritize_tasks")
 graph.add_edge("prioritize_tasks", "plan_next_action")
-graph.add_edge("plan_next_action", "summarize_tasks")
+graph.add_edge("plan_next_action", "prepare_execution")
+graph.add_edge("prepare_execution", "summarize_tasks")
 graph.add_edge("summarize_tasks", END)
 
 lifeadmin_agent = graph.compile()
