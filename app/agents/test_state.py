@@ -3,6 +3,7 @@ from app.agents.state import AgentState
 
 state = AgentState(
     user_request="What do I need to take care of?",
+    intent="review_tasks",
     current_step="Planning tasks"
 )
 
@@ -25,6 +26,7 @@ state.response = "Your next action is to renew your insurance."
 
 
 print("User Request:", state.user_request)
+print("Intent:", state.intent)
 print("Current Step:", state.current_step)
 print("Tasks:", state.tasks)
 print("Plan:", state.plan)
