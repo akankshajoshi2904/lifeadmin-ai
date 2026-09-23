@@ -71,28 +71,24 @@ def prioritize_tasks_node(state: AgentState):
 
 
 def plan_next_action_node(state: AgentState):
-    """Decide what the user should do next."""
+    """Create an ordered plan from the prioritized tasks."""
     if not state.tasks:
-        state.response = "You have no pending tasks."
-        state.current_step = "Next action planned"
+        state.plan = []
+        state.current_step = "Plan created"
         return state
 
-    next_task = state.tasks[0]
+    state.plan = [
+        task["title"]
+        for task in state.tasks
+    ]
 
-    state.response = (
-        f"Your next action should be: "
-        f"{next_task['title']}. "
-        f"It is due on {next_task['due_date']} "
-        f"and is marked {next_task['priority']} priority."
-    )
-
-    state.current_step = "Next action planned"
+    state.current_step = "Plan created"
 
     return state
 
 
 def summarize_tasks_node(state: AgentState):
-    """Create a summary from prioritized tasks."""
+    """Create a summary from the prioritized tasks and plan."""
     if not state.tasks:
         state.response = "You have no pending tasks."
     else:
@@ -108,13 +104,13 @@ def summarize_tasks_node(state: AgentState):
             if task["priority"] == "High"
         ]
 
-        next_task = state.tasks[0]
+        next_action = state.plan[0]
 
         state.response = (
             f"You have {len(state.tasks)} pending task(s). "
             f"{len(high_priority)} are high priority. "
             f"{len(due_soon)} need attention within the next 7 days. "
-            f"Your next action should be: {next_task['title']}."
+            f"Your next action should be: {next_action}."
         )
 
     state.current_step = "Tasks summarized"
