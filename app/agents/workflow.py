@@ -3,7 +3,10 @@ from datetime import datetime
 from langgraph.graph import StateGraph, START, END
 
 from app.agents.state import AgentState
-from app.tools.task_tools import list_tasks_tool
+from app.tools.task_tools import (
+    list_tasks_tool,
+    complete_task_tool,
+)
 
 
 def get_tasks_node(state: AgentState):
@@ -91,14 +94,12 @@ def prepare_execution_node(state: AgentState):
     """Prepare the highest-priority task for human approval."""
     if not state.tasks:
         state.approval_required = False
-        state.approved = False
         state.current_step = "No action available"
         return state
 
     next_task = state.tasks[0]
 
     state.approval_required = True
-    state.approved = False
 
     state.response = (
         f"Execution prepared for task {next_task['id']}: "
@@ -111,10 +112,68 @@ def prepare_execution_node(state: AgentState):
     return state
 
 
+def execute_task_node(state: AgentState):
+    """Execute the planned task only after human approval."""
+    if not state.tasks:
+        state.current_step = "No action available"
+        return state
+
+    if not state.approval_required or not state.approved:
+        state.current_step = "Execution blocked"
+        return state
+
+    next_task = state.tasks[0]
+    task_id = next_task["id"]
+
+    complete_task_tool(task_id)
+
+    state.approval_required = False
+    state.approved = False
+
+    state.response = (
+        f"Task completed successfully: "
+        f"{next_task['title']}."
+    )
+
+    state.current_step = "Task executed"
+
+    return state
+
+
 def summarize_tasks_node(state: AgentState):
     """Create a summary from the prioritized tasks and plan."""
     if not state.tasks:
         state.response = "You have no pending tasks."
+
+    elif state.current_step == "Execution blocked":
+        due_soon = [
+            task
+            for task in state.tasks
+            if task["urgency"] in ["Overdue", "Due Soon"]
+        ]
+
+        high_priority = [
+            task
+            for task in state.tasks
+            if task["priority"] == "High"
+        ]
+
+        next_action = state.plan[0]
+
+        state.response = (
+            f"You have {len(state.tasks)} pending task(s). "
+            f"{len(high_priority)} are high priority. "
+            f"{len(due_soon)} need attention within the next 7 days. "
+            f"Your next action should be: {next_action}. "
+            f"Human approval is required before execution."
+        )
+
+    elif state.current_step == "Task executed":
+        state.response = (
+            f"Task executed successfully. "
+            f"The completed action was: {state.plan[0]}."
+        )
+
     else:
         due_soon = [
             task
@@ -149,13 +208,15 @@ graph.add_node("get_tasks", get_tasks_node)
 graph.add_node("prioritize_tasks", prioritize_tasks_node)
 graph.add_node("plan_next_action", plan_next_action_node)
 graph.add_node("prepare_execution", prepare_execution_node)
+graph.add_node("execute_task", execute_task_node)
 graph.add_node("summarize_tasks", summarize_tasks_node)
 
 graph.add_edge(START, "get_tasks")
 graph.add_edge("get_tasks", "prioritize_tasks")
 graph.add_edge("prioritize_tasks", "plan_next_action")
 graph.add_edge("plan_next_action", "prepare_execution")
-graph.add_edge("prepare_execution", "summarize_tasks")
+graph.add_edge("prepare_execution", "execute_task")
+graph.add_edge("execute_task", "summarize_tasks")
 graph.add_edge("summarize_tasks", END)
 
 lifeadmin_agent = graph.compile()
