@@ -2,7 +2,19 @@ import streamlit as st
 
 from utils.pdf_reader import extract_text_from_pdf
 from document_analyzer import analyze_document
+from task_manager import create_tasks_table, add_task, get_tasks
 
+
+# -----------------------------------
+# Initialize database
+# -----------------------------------
+
+create_tasks_table()
+
+
+# -----------------------------------
+# Streamlit configuration
+# -----------------------------------
 
 st.set_page_config(
     page_title="LifeAdmin AI",
@@ -11,15 +23,24 @@ st.set_page_config(
 )
 
 
+# -----------------------------------
+# Application header
+# -----------------------------------
+
 st.title("🧾 LifeAdmin AI")
 st.subheader("Your Personal Administration Agent")
 
 st.write(
     "Upload your important documents and LifeAdmin AI "
-    "will help identify important information and actions."
+    "will identify important information and create tasks."
 )
 
 st.divider()
+
+
+# -----------------------------------
+# Document upload
+# -----------------------------------
 
 st.header("📄 Upload a Document")
 
@@ -33,13 +54,17 @@ if uploaded_file is not None:
 
     st.success(f"Uploaded: {uploaded_file.name}")
 
-    if st.button("📖 Read Document"):
+    if st.button("📖 Analyze Document"):
 
         with st.spinner("Reading document..."):
 
             extracted_text = extract_text_from_pdf(uploaded_file)
 
         if extracted_text.strip():
+
+            # -----------------------------------
+            # Show extracted text
+            # -----------------------------------
 
             st.subheader("📄 Extracted Text")
 
@@ -50,6 +75,10 @@ if uploaded_file is not None:
             )
 
             st.divider()
+
+            # -----------------------------------
+            # Analyze document
+            # -----------------------------------
 
             st.subheader("🤖 Document Analysis")
 
@@ -80,9 +109,76 @@ if uploaded_file is not None:
                 analysis["priority"]
             )
 
+            st.divider()
+
+            # -----------------------------------
+            # Create task
+            # -----------------------------------
+
+            if analysis["action_required"]:
+
+                document_type = analysis["document_type"]
+
+                action = analysis["action_required"]
+
+                task_title = f"{action} {document_type}"
+
+                add_task(
+                    title=task_title,
+                    due_date=analysis["important_date"],
+                    priority=analysis["priority"]
+                )
+
+                st.success(
+                    f"✅ Task created: {task_title}"
+                )
+
+            else:
+
+                st.info(
+                    "No action was detected in this document."
+                )
+
         else:
 
             st.warning(
                 "I could not extract text from this PDF. "
                 "It may be a scanned/image-based document."
             )
+
+
+# -----------------------------------
+# Task dashboard
+# -----------------------------------
+
+st.divider()
+
+st.header("📋 Your Tasks")
+
+tasks = get_tasks()
+
+if tasks:
+
+    for task in tasks:
+
+        task_id = task[0]
+        title = task[1]
+        due_date = task[2]
+        priority = task[3]
+        status = task[4]
+
+        st.write(
+            f"**{title}**"
+        )
+
+        st.write(
+            f"Due: {due_date}  |  "
+            f"Priority: {priority}  |  "
+            f"Status: {status}"
+        )
+
+        st.divider()
+
+else:
+
+    st.info("No tasks yet.")
