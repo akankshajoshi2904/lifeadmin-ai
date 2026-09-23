@@ -1,9 +1,9 @@
-from state import AgentState
+from app.agents.state import AgentState
 
 
 state = AgentState(
     user_request="What do I need to take care of?",
-    current_step="Reviewing tasks"
+    current_step="Planning tasks"
 )
 
 state.tasks = [
@@ -14,9 +14,15 @@ state.tasks = [
     }
 ]
 
-state.response = "You have one high-priority task."
+state.plan = [
+    "Renew Insurance"
+]
+
+state.response = "Your next action is to renew your insurance."
+
 
 print("User Request:", state.user_request)
 print("Current Step:", state.current_step)
 print("Tasks:", state.tasks)
+print("Plan:", state.plan)
 print("Response:", state.response)
