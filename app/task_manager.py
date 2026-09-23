@@ -23,7 +23,31 @@ def create_tasks_table():
     connection.close()
 
 
+def task_exists(title, due_date):
+    connection = sqlite3.connect(DATABASE)
+
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        SELECT id
+        FROM tasks
+        WHERE title = ?
+        AND due_date = ?
+        AND status = 'Pending'
+    """, (title, due_date))
+
+    task = cursor.fetchone()
+
+    connection.close()
+
+    return task is not None
+
+
 def add_task(title, due_date=None, priority="Low"):
+
+    if task_exists(title, due_date):
+        return False
+
     connection = sqlite3.connect(DATABASE)
 
     cursor = connection.cursor()
@@ -35,6 +59,8 @@ def add_task(title, due_date=None, priority="Low"):
 
     connection.commit()
     connection.close()
+
+    return True
 
 
 def get_tasks():

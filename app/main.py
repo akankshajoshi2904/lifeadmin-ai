@@ -123,15 +123,23 @@ if uploaded_file is not None:
 
                 task_title = f"{action} {document_type}"
 
-                add_task(
+                task_created = add_task(
                     title=task_title,
                     due_date=analysis["important_date"],
                     priority=analysis["priority"]
                 )
 
-                st.success(
-                    f"✅ Task created: {task_title}"
-                )
+                if task_created:
+
+                    st.success(
+                        f"✅ Task created: {task_title}"
+                    )
+
+                else:
+
+                    st.info(
+                        f"ℹ️ This task already exists: {task_title}"
+                    )
 
             else:
 
