@@ -8,7 +8,6 @@ from app.tools.task_tools import list_tasks_tool
 
 def get_tasks_node(state: AgentState):
     """Retrieve the user's tasks."""
-
     tasks = list_tasks_tool()
 
     state.tasks = tasks
@@ -19,13 +18,11 @@ def get_tasks_node(state: AgentState):
 
 def prioritize_tasks_node(state: AgentState):
     """Prioritize pending tasks based on priority and deadline."""
-
     today = datetime.now()
 
     prioritized_tasks = []
 
     for task in state.tasks:
-
         task_id = task[0]
         title = task[1]
         due_date = task[2]
@@ -36,25 +33,17 @@ def prioritize_tasks_node(state: AgentState):
             continue
 
         try:
-            due = datetime.strptime(
-                due_date,
-                "%d %B %Y"
-            )
-
+            due = datetime.strptime(due_date, "%d %B %Y")
             days_left = (due - today).days
-
         except (ValueError, TypeError):
             days_left = 9999
 
         if days_left < 0:
             urgency = "Overdue"
-
         elif days_left <= 7:
             urgency = "Due Soon"
-
         elif days_left <= 30:
             urgency = "Upcoming"
-
         else:
             urgency = "Later"
 
@@ -81,15 +70,32 @@ def prioritize_tasks_node(state: AgentState):
     return state
 
 
+def plan_next_action_node(state: AgentState):
+    """Decide what the user should do next."""
+    if not state.tasks:
+        state.response = "You have no pending tasks."
+        state.current_step = "Next action planned"
+        return state
+
+    next_task = state.tasks[0]
+
+    state.response = (
+        f"Your next action should be: "
+        f"{next_task['title']}. "
+        f"It is due on {next_task['due_date']} "
+        f"and is marked {next_task['priority']} priority."
+    )
+
+    state.current_step = "Next action planned"
+
+    return state
+
+
 def summarize_tasks_node(state: AgentState):
     """Create a summary from prioritized tasks."""
-
     if not state.tasks:
-
         state.response = "You have no pending tasks."
-
     else:
-
         due_soon = [
             task
             for task in state.tasks
@@ -102,10 +108,13 @@ def summarize_tasks_node(state: AgentState):
             if task["priority"] == "High"
         ]
 
+        next_task = state.tasks[0]
+
         state.response = (
             f"You have {len(state.tasks)} pending task(s). "
             f"{len(high_priority)} are high priority. "
-            f"{len(due_soon)} need attention within the next 7 days."
+            f"{len(due_soon)} need attention within the next 7 days. "
+            f"Your next action should be: {next_task['title']}."
         )
 
     state.current_step = "Tasks summarized"
@@ -113,51 +122,17 @@ def summarize_tasks_node(state: AgentState):
     return state
 
 
-# -----------------------------------
-# Create LangGraph workflow
-# -----------------------------------
-
 graph = StateGraph(AgentState)
 
+graph.add_node("get_tasks", get_tasks_node)
+graph.add_node("prioritize_tasks", prioritize_tasks_node)
+graph.add_node("plan_next_action", plan_next_action_node)
+graph.add_node("summarize_tasks", summarize_tasks_node)
 
-# Add nodes
-graph.add_node(
-    "get_tasks",
-    get_tasks_node
-)
+graph.add_edge(START, "get_tasks")
+graph.add_edge("get_tasks", "prioritize_tasks")
+graph.add_edge("prioritize_tasks", "plan_next_action")
+graph.add_edge("plan_next_action", "summarize_tasks")
+graph.add_edge("summarize_tasks", END)
 
-graph.add_node(
-    "prioritize_tasks",
-    prioritize_tasks_node
-)
-
-graph.add_node(
-    "summarize_tasks",
-    summarize_tasks_node
-)
-
-
-# Define workflow
-graph.add_edge(
-    START,
-    "get_tasks"
-)
-
-graph.add_edge(
-    "get_tasks",
-    "prioritize_tasks"
-)
-
-graph.add_edge(
-    "prioritize_tasks",
-    "summarize_tasks"
-)
-
-graph.add_edge(
-    "summarize_tasks",
-    END
-)
-
-
-# Compile agent
 lifeadmin_agent = graph.compile()
