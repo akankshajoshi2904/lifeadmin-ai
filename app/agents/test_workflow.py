@@ -4,13 +4,16 @@ from app.agents.workflow import lifeadmin_agent
 
 state = AgentState(
     user_request="Complete my next task.",
-    approved=True
+    approved=False
 )
 
 result = lifeadmin_agent.invoke(state)
 
 print("User Request:")
 print(result["user_request"])
+
+print("\nIntent:")
+print(result["intent"])
 
 print("\nCurrent Step:")
 print(result["current_step"])

@@ -9,6 +9,50 @@ from app.tools.task_tools import (
 )
 
 
+def detect_intent_node(state: AgentState):
+    """Detect the user's requested action using simple rules."""
+    request = state.user_request.lower()
+
+    if any(
+        phrase in request
+        for phrase in [
+            "complete",
+            "finish",
+            "done",
+            "mark as completed",
+        ]
+    ):
+        state.intent = "complete_task"
+
+    elif any(
+        phrase in request
+        for phrase in [
+            "create a task",
+            "add a task",
+            "new task",
+            "remind me",
+        ]
+    ):
+        state.intent = "create_task"
+
+    elif any(
+        phrase in request
+        for phrase in [
+            "upcoming",
+            "due soon",
+            "next",
+        ]
+    ):
+        state.intent = "upcoming_tasks"
+
+    else:
+        state.intent = "review_tasks"
+
+    state.current_step = "Intent detected"
+
+    return state
+
+
 def get_tasks_node(state: AgentState):
     """Retrieve the user's tasks."""
     tasks = list_tasks_tool()
@@ -204,6 +248,7 @@ def summarize_tasks_node(state: AgentState):
 
 graph = StateGraph(AgentState)
 
+graph.add_node("detect_intent", detect_intent_node)
 graph.add_node("get_tasks", get_tasks_node)
 graph.add_node("prioritize_tasks", prioritize_tasks_node)
 graph.add_node("plan_next_action", plan_next_action_node)
@@ -211,7 +256,8 @@ graph.add_node("prepare_execution", prepare_execution_node)
 graph.add_node("execute_task", execute_task_node)
 graph.add_node("summarize_tasks", summarize_tasks_node)
 
-graph.add_edge(START, "get_tasks")
+graph.add_edge(START, "detect_intent")
+graph.add_edge("detect_intent", "get_tasks")
 graph.add_edge("get_tasks", "prioritize_tasks")
 graph.add_edge("prioritize_tasks", "plan_next_action")
 graph.add_edge("plan_next_action", "prepare_execution")
