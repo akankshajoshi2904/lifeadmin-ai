@@ -88,19 +88,25 @@ def plan_next_action_node(state: AgentState):
 
 
 def prepare_execution_node(state: AgentState):
-    """Prepare the highest-priority planned task for execution."""
+    """Prepare the highest-priority task for human approval."""
     if not state.tasks:
+        state.approval_required = False
+        state.approved = False
         state.current_step = "No action available"
         return state
 
     next_task = state.tasks[0]
 
+    state.approval_required = True
+    state.approved = False
+
     state.response = (
         f"Execution prepared for task {next_task['id']}: "
-        f"{next_task['title']}"
+        f"{next_task['title']}. "
+        f"Human approval is required before execution."
     )
 
-    state.current_step = "Execution prepared"
+    state.current_step = "Waiting for approval"
 
     return state
 
@@ -129,7 +135,7 @@ def summarize_tasks_node(state: AgentState):
             f"{len(high_priority)} are high priority. "
             f"{len(due_soon)} need attention within the next 7 days. "
             f"Your next action should be: {next_action}. "
-            f"Execution has been prepared for approval."
+            f"Human approval is required before execution."
         )
 
     state.current_step = "Tasks summarized"
