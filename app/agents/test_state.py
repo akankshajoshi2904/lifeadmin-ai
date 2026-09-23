@@ -18,6 +18,9 @@ state.plan = [
     "Renew Insurance"
 ]
 
+state.approval_required = True
+state.approved = False
+
 state.response = "Your next action is to renew your insurance."
 
 
@@ -25,4 +28,6 @@ print("User Request:", state.user_request)
 print("Current Step:", state.current_step)
 print("Tasks:", state.tasks)
 print("Plan:", state.plan)
+print("Approval Required:", state.approval_required)
+print("Approved:", state.approved)
 print("Response:", state.response)
