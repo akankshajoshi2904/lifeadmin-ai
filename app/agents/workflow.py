@@ -6,6 +6,7 @@ from app.agents.state import AgentState
 from app.agents.router import detect_intent
 from app.tools.task_tools import (
     list_tasks_tool,
+    create_task_tool,
     complete_task_tool,
 )
 
@@ -84,6 +85,12 @@ def prioritize_tasks_node(state: AgentState):
 
 def plan_next_action_node(state: AgentState):
     """Create an ordered plan from the prioritized tasks."""
+
+    if state.intent == "create_task":
+        state.plan = ["Create the requested task"]
+        state.current_step = "Plan created"
+        return state
+
     if not state.tasks:
         state.plan = []
         state.current_step = "Plan created"
@@ -102,18 +109,25 @@ def plan_next_action_node(state: AgentState):
 def prepare_execution_node(state: AgentState):
     """Prepare execution only for actions that modify tasks."""
 
-    if not state.tasks:
-        state.approval_required = False
-        state.current_step = "No action available"
-        return state
-
-    # Informational requests do not require approval.
     if state.intent in ["upcoming_tasks", "review_tasks"]:
         state.approval_required = False
         state.current_step = "Information ready"
         return state
 
-    # Actions that modify task state require human approval.
+    if state.intent == "create_task":
+        state.approval_required = True
+        state.response = (
+            "A new task is ready to be created. "
+            "Human approval is required before creation."
+        )
+        state.current_step = "Waiting for approval"
+        return state
+
+    if not state.tasks:
+        state.approval_required = False
+        state.current_step = "No action available"
+        return state
+
     next_task = state.tasks[0]
 
     state.approval_required = True
@@ -130,19 +144,41 @@ def prepare_execution_node(state: AgentState):
 
 
 def execute_task_node(state: AgentState):
-    """Execute the planned task only after human approval."""
+    """Execute task actions only after human approval."""
 
-    # Informational requests should never execute a task.
     if state.intent in ["upcoming_tasks", "review_tasks"]:
         state.current_step = "Information only"
         return state
 
-    if not state.tasks:
-        state.current_step = "No action available"
-        return state
-
     if not state.approval_required or not state.approved:
         state.current_step = "Execution blocked"
+        return state
+
+    if state.intent == "create_task":
+        task_title = state.user_request
+
+        created = create_task_tool(
+            title=task_title,
+            priority="Medium"
+        )
+
+        if created:
+            state.response = (
+                f"Task created successfully: {task_title}."
+            )
+        else:
+            state.response = (
+                f"The task already exists: {task_title}."
+            )
+
+        state.approval_required = False
+        state.approved = False
+        state.current_step = "Task executed"
+
+        return state
+
+    if not state.tasks:
+        state.current_step = "No action available"
         return state
 
     next_task = state.tasks[0]
@@ -165,6 +201,15 @@ def execute_task_node(state: AgentState):
 
 def summarize_tasks_node(state: AgentState):
     """Create a response based on the user's intent."""
+
+    if state.intent == "create_task":
+        if state.current_step == "Execution blocked":
+            state.response = (
+                "A new task is ready to be created. "
+                "Human approval is required before creation."
+            )
+
+        return state
 
     if not state.tasks:
         state.response = "You have no pending tasks."
