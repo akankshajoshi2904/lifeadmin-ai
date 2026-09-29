@@ -28,3 +28,13 @@ def reject_request(state):
     agent_state = AgentState(**state)
 
     return reject_action(agent_state)
+
+
+def execute_approved_request(state):
+    """Execute an action that has already received human approval."""
+
+    agent_state = AgentState(**state)
+
+    result = lifeadmin_agent.invoke(agent_state)
+
+    return AgentState(**result)
