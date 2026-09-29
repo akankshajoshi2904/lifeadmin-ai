@@ -100,12 +100,20 @@ def plan_next_action_node(state: AgentState):
 
 
 def prepare_execution_node(state: AgentState):
-    """Prepare the highest-priority task for human approval."""
+    """Prepare execution only for actions that modify tasks."""
+
     if not state.tasks:
         state.approval_required = False
         state.current_step = "No action available"
         return state
 
+    # Informational requests do not require approval.
+    if state.intent in ["upcoming_tasks", "review_tasks"]:
+        state.approval_required = False
+        state.current_step = "Information ready"
+        return state
+
+    # Actions that modify task state require human approval.
     next_task = state.tasks[0]
 
     state.approval_required = True
@@ -123,6 +131,12 @@ def prepare_execution_node(state: AgentState):
 
 def execute_task_node(state: AgentState):
     """Execute the planned task only after human approval."""
+
+    # Informational requests should never execute a task.
+    if state.intent in ["upcoming_tasks", "review_tasks"]:
+        state.current_step = "Information only"
+        return state
+
     if not state.tasks:
         state.current_step = "No action available"
         return state
@@ -150,9 +164,53 @@ def execute_task_node(state: AgentState):
 
 
 def summarize_tasks_node(state: AgentState):
-    """Create a summary from the prioritized tasks and plan."""
+    """Create a response based on the user's intent."""
+
     if not state.tasks:
         state.response = "You have no pending tasks."
+
+    elif state.intent == "upcoming_tasks":
+        upcoming_tasks = [
+            task
+            for task in state.tasks
+            if task["urgency"] in ["Upcoming", "Due Soon", "Overdue"]
+        ]
+
+        if upcoming_tasks:
+            task_lines = [
+                f"{task['title']} — Due: {task['due_date']} "
+                f"({task['urgency']})"
+                for task in upcoming_tasks
+            ]
+
+            state.response = (
+                "Here are your upcoming tasks:\n"
+                + "\n".join(task_lines)
+            )
+        else:
+            state.response = "You have no upcoming tasks."
+
+    elif state.intent == "review_tasks":
+        due_soon = [
+            task
+            for task in state.tasks
+            if task["urgency"] in ["Overdue", "Due Soon"]
+        ]
+
+        high_priority = [
+            task
+            for task in state.tasks
+            if task["priority"] == "High"
+        ]
+
+        next_action = state.plan[0]
+
+        state.response = (
+            f"You have {len(state.tasks)} pending task(s). "
+            f"{len(high_priority)} are high priority. "
+            f"{len(due_soon)} need attention within the next 7 days. "
+            f"Your next action should be: {next_action}."
+        )
 
     elif state.current_step == "Execution blocked":
         due_soon = [
