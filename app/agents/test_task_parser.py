@@ -18,6 +18,14 @@ test_cases = [
         "Finish my assignment.",
         "Finish my assignment",
     ),
+    (
+        "Create a task to submit my project report by 5 October 2026.",
+        "submit my project report",
+    ),
+    (
+        "Remind me to pay the bill on 12 November 2026.",
+        "pay the bill",
+    ),
 ]
 
 

@@ -5,6 +5,7 @@ from langgraph.graph import StateGraph, START, END
 from app.agents.state import AgentState
 from app.agents.router import detect_intent
 from app.agents.task_parser import extract_task_title
+from app.agents.task_date_parser import extract_due_date
 from app.tools.task_tools import (
     list_tasks_tool,
     create_task_tool,
@@ -89,10 +90,16 @@ def plan_next_action_node(state: AgentState):
 
     if state.intent == "create_task":
         task_title = extract_task_title(state.user_request)
+        due_date = extract_due_date(state.user_request)
 
-        state.plan = [
-            f"Create task: {task_title}"
-        ]
+        if due_date:
+            state.plan = [
+                f"Create task: {task_title} — Due: {due_date}"
+            ]
+        else:
+            state.plan = [
+                f"Create task: {task_title}"
+            ]
 
         state.current_step = "Plan created"
         return state
@@ -162,16 +169,24 @@ def execute_task_node(state: AgentState):
 
     if state.intent == "create_task":
         task_title = extract_task_title(state.user_request)
+        due_date = extract_due_date(state.user_request)
 
         created = create_task_tool(
             title=task_title,
+            due_date=due_date,
             priority="Medium"
         )
 
         if created:
-            state.response = (
-                f"Task created successfully: {task_title}."
-            )
+            if due_date:
+                state.response = (
+                    f"Task created successfully: {task_title}. "
+                    f"Due date: {due_date}."
+                )
+            else:
+                state.response = (
+                    f"Task created successfully: {task_title}."
+                )
         else:
             state.response = (
                 f"The task already exists: {task_title}."
@@ -211,11 +226,19 @@ def summarize_tasks_node(state: AgentState):
     if state.intent == "create_task":
         if state.current_step == "Execution blocked":
             task_title = extract_task_title(state.user_request)
+            due_date = extract_due_date(state.user_request)
 
-            state.response = (
-                f"Task ready to create: {task_title}. "
-                f"Human approval is required before creation."
-            )
+            if due_date:
+                state.response = (
+                    f"Task ready to create: {task_title}. "
+                    f"Due date: {due_date}. "
+                    f"Human approval is required before creation."
+                )
+            else:
+                state.response = (
+                    f"Task ready to create: {task_title}. "
+                    f"Human approval is required before creation."
+                )
 
         return state
 
