@@ -3,6 +3,7 @@ from datetime import datetime
 from langgraph.graph import StateGraph, START, END
 
 from app.agents.state import AgentState
+from app.agents.router import detect_intent
 from app.tools.task_tools import (
     list_tasks_tool,
     complete_task_tool,
@@ -10,44 +11,8 @@ from app.tools.task_tools import (
 
 
 def detect_intent_node(state: AgentState):
-    """Detect the user's requested action using simple rules."""
-    request = state.user_request.lower()
-
-    if any(
-        phrase in request
-        for phrase in [
-            "complete",
-            "finish",
-            "done",
-            "mark as completed",
-        ]
-    ):
-        state.intent = "complete_task"
-
-    elif any(
-        phrase in request
-        for phrase in [
-            "create a task",
-            "add a task",
-            "new task",
-            "remind me",
-        ]
-    ):
-        state.intent = "create_task"
-
-    elif any(
-        phrase in request
-        for phrase in [
-            "upcoming",
-            "due soon",
-            "next",
-        ]
-    ):
-        state.intent = "upcoming_tasks"
-
-    else:
-        state.intent = "review_tasks"
-
+    """Detect the user's intent using the separate router module."""
+    state.intent = detect_intent(state.user_request)
     state.current_step = "Intent detected"
 
     return state
