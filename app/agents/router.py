@@ -3,17 +3,9 @@ def detect_intent(user_request: str) -> str:
 
     request = user_request.lower()
 
-    if any(
-        phrase in request
-        for phrase in [
-            "complete",
-            "finish",
-            "done",
-            "mark as completed",
-        ]
-    ):
-        return "complete_task"
-
+    # Check task creation first.
+    # This prevents words like "complete" inside a new task
+    # description from being mistaken for a completion request.
     if any(
         phrase in request
         for phrase in [
@@ -24,6 +16,17 @@ def detect_intent(user_request: str) -> str:
         ]
     ):
         return "create_task"
+
+    if any(
+        phrase in request
+        for phrase in [
+            "complete",
+            "finish",
+            "done",
+            "mark as completed",
+        ]
+    ):
+        return "complete_task"
 
     if any(
         phrase in request
