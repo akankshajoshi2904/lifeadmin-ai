@@ -211,6 +211,21 @@ def summarize_tasks_node(state: AgentState):
     return state
 
 
+def route_by_intent(state: AgentState):
+    """Choose the workflow path based on detected intent."""
+
+    if state.intent == "complete_task":
+        return "complete_task"
+
+    if state.intent == "upcoming_tasks":
+        return "upcoming_tasks"
+
+    if state.intent == "create_task":
+        return "create_task"
+
+    return "review_tasks"
+
+
 graph = StateGraph(AgentState)
 
 graph.add_node("detect_intent", detect_intent_node)
@@ -222,7 +237,18 @@ graph.add_node("execute_task", execute_task_node)
 graph.add_node("summarize_tasks", summarize_tasks_node)
 
 graph.add_edge(START, "detect_intent")
-graph.add_edge("detect_intent", "get_tasks")
+
+graph.add_conditional_edges(
+    "detect_intent",
+    route_by_intent,
+    {
+        "complete_task": "get_tasks",
+        "upcoming_tasks": "get_tasks",
+        "create_task": "get_tasks",
+        "review_tasks": "get_tasks",
+    },
+)
+
 graph.add_edge("get_tasks", "prioritize_tasks")
 graph.add_edge("prioritize_tasks", "plan_next_action")
 graph.add_edge("plan_next_action", "prepare_execution")
