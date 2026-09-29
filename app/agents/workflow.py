@@ -4,6 +4,7 @@ from langgraph.graph import StateGraph, START, END
 
 from app.agents.state import AgentState
 from app.agents.router import detect_intent
+from app.agents.task_parser import extract_task_title
 from app.tools.task_tools import (
     list_tasks_tool,
     create_task_tool,
@@ -84,10 +85,15 @@ def prioritize_tasks_node(state: AgentState):
 
 
 def plan_next_action_node(state: AgentState):
-    """Create an ordered plan from the prioritized tasks."""
+    """Create an ordered plan from the user's intent."""
 
     if state.intent == "create_task":
-        state.plan = ["Create the requested task"]
+        task_title = extract_task_title(state.user_request)
+
+        state.plan = [
+            f"Create task: {task_title}"
+        ]
+
         state.current_step = "Plan created"
         return state
 
@@ -155,7 +161,7 @@ def execute_task_node(state: AgentState):
         return state
 
     if state.intent == "create_task":
-        task_title = state.user_request
+        task_title = extract_task_title(state.user_request)
 
         created = create_task_tool(
             title=task_title,
@@ -204,9 +210,11 @@ def summarize_tasks_node(state: AgentState):
 
     if state.intent == "create_task":
         if state.current_step == "Execution blocked":
+            task_title = extract_task_title(state.user_request)
+
             state.response = (
-                "A new task is ready to be created. "
-                "Human approval is required before creation."
+                f"Task ready to create: {task_title}. "
+                f"Human approval is required before creation."
             )
 
         return state
