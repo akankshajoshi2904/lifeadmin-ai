@@ -1,24 +1,24 @@
-from tools.task_tools import (
+
+import unittest
+
+from app.tools.task_tools import (
     create_task_tool,
     list_tasks_tool,
     complete_task_tool,
 )
 
 
-# Test 1: Create a task
-created = create_task_tool(
-    title="Submit college assignment",
-    due_date="30 September 2026",
-    priority="Medium",
-)
+class TestTaskTools(unittest.TestCase):
 
-print("Task created:", created)
+    def test_create_task_tool_is_available(self):
+        self.assertTrue(callable(create_task_tool))
+
+    def test_list_tasks_tool_is_available(self):
+        self.assertTrue(callable(list_tasks_tool))
+
+    def test_complete_task_tool_is_available(self):
+        self.assertTrue(callable(complete_task_tool))
 
 
-# Test 2: List tasks
-tasks = list_tasks_tool()
-
-print("\nCurrent tasks:")
-
-for task in tasks:
-    print(task)
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

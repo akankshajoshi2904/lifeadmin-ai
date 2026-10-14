@@ -1,35 +1,63 @@
+
+import unittest
+
 from app.agents.state import AgentState
 
 
-state = AgentState(
-    user_request="What do I need to take care of?",
-    intent="review_tasks",
-    current_step="Planning tasks"
-)
+class TestAgentState(unittest.TestCase):
 
-state.tasks = [
-    {
-        "title": "Renew Insurance",
-        "due_date": "14 October 2026",
-        "priority": "High"
-    }
-]
+    def setUp(self):
+        self.state = AgentState(
+            user_request="What do I need to take care of?",
+            intent="review_tasks",
+            current_step="Planning tasks",
+        )
 
-state.plan = [
-    "Renew Insurance"
-]
+    def test_initial_state_values(self):
+        self.assertEqual(
+            self.state.user_request,
+            "What do I need to take care of?",
+        )
+        self.assertEqual(self.state.intent, "review_tasks")
+        self.assertEqual(self.state.current_step, "Planning tasks")
 
-state.approval_required = True
-state.approved = False
+    def test_tasks_can_be_stored(self):
+        self.state.tasks = [
+            {
+                "title": "Renew Insurance",
+                "due_date": "14 October 2026",
+                "priority": "High",
+            }
+        ]
 
-state.response = "Your next action is to renew your insurance."
+        self.assertEqual(len(self.state.tasks), 1)
+        self.assertEqual(
+            self.state.tasks[0]["title"],
+            "Renew Insurance",
+        )
+
+    def test_plan_can_be_stored(self):
+        self.state.plan = ["Renew Insurance"]
+
+        self.assertEqual(self.state.plan, ["Renew Insurance"])
+
+    def test_approval_values_can_be_stored(self):
+        self.state.approval_required = True
+        self.state.approved = False
+
+        self.assertTrue(self.state.approval_required)
+        self.assertFalse(self.state.approved)
+
+    def test_response_can_be_stored(self):
+        self.state.response = (
+            "Your next action is to renew your insurance."
+        )
+
+        self.assertEqual(
+            self.state.response,
+            "Your next action is to renew your insurance.",
+        )
 
 
-print("User Request:", state.user_request)
-print("Intent:", state.intent)
-print("Current Step:", state.current_step)
-print("Tasks:", state.tasks)
-print("Plan:", state.plan)
-print("Approval Required:", state.approval_required)
-print("Approved:", state.approved)
-print("Response:", state.response)
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

@@ -1,41 +1,46 @@
+
+import unittest
+
 from app.agents.state import AgentState
 from app.agents.workflow import lifeadmin_agent
 
 
-state = AgentState(
-    user_request="Complete my next task.",
-    approved=False
-)
+class TestLifeAdminWorkflow(unittest.TestCase):
 
-result = lifeadmin_agent.invoke(state)
+    def test_workflow_detects_complete_task_intent(self):
+        state = AgentState(
+            user_request="Complete my next task.",
+            approved=False,
+        )
 
-print("User Request:")
-print(result["user_request"])
+        result = lifeadmin_agent.invoke(state)
 
-print("\nIntent:")
-print(result["intent"])
+        self.assertEqual(result["intent"], "complete_task")
 
-print("\nCurrent Step:")
-print(result["current_step"])
+    def test_workflow_requires_approval(self):
+        state = AgentState(
+            user_request="Complete my next task.",
+            approved=False,
+        )
 
-print("\nApproval Required:")
-print(result["approval_required"])
+        result = lifeadmin_agent.invoke(state)
 
-print("Approved:")
-print(result["approved"])
+        self.assertTrue(result["approval_required"])
+        self.assertFalse(result["approved"])
 
-print("\nPlan:")
-for step_number, action in enumerate(result["plan"], start=1):
-    print(f"{step_number}. {action}")
+    def test_workflow_returns_plan_and_response(self):
+        state = AgentState(
+            user_request="Complete my next task.",
+            approved=False,
+        )
 
-print("\nPrioritized Tasks:")
-for task in result["tasks"]:
-    print(
-        f"- {task['title']} | "
-        f"Due: {task['due_date']} | "
-        f"Priority: {task['priority']} | "
-        f"Urgency: {task['urgency']}"
-    )
+        result = lifeadmin_agent.invoke(state)
 
-print("\nAgent Response:")
-print(result["response"])
+        self.assertIsInstance(result["plan"], list)
+        self.assertIsInstance(result["tasks"], list)
+        self.assertIsInstance(result["response"], str)
+        self.assertTrue(result["response"])
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

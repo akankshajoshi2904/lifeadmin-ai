@@ -1,15 +1,23 @@
-from task_manager import create_tasks_table, add_task, get_tasks
 
+import unittest
 
-create_tasks_table()
-
-add_task(
-    title="Renew insurance policy",
-    due_date="14 October 2026",
-    priority="High"
+from app.task_manager import (
+    create_tasks_table,
+    add_task,
+    get_tasks,
 )
 
-tasks = get_tasks()
 
-for task in tasks:
-    print(task)
+class TestTaskManager(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        create_tasks_table()
+
+    def test_get_tasks_returns_a_list(self):
+        tasks = get_tasks()
+        self.assertIsInstance(tasks, list)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

@@ -1,3 +1,6 @@
+
+import unittest
+
 from app.agents.controller import (
     prepare_request,
     approve_request,
@@ -5,27 +8,31 @@ from app.agents.controller import (
 )
 
 
-state = prepare_request(
-    "Create a task to review the LifeAdmin project by 20 October 2026."
-)
+class TestController(unittest.TestCase):
 
-print("Prepared request:")
-print("Intent:", state["intent"])
-print("Approval Required:", state["approval_required"])
-print("Approved:", state["approved"])
-print("Plan:", state["plan"])
-print("Response:", state["response"])
+    def setUp(self):
+        self.request = (
+            "Create a task to review the LifeAdmin project "
+            "by 20 October 2026."
+        )
 
-assert state["approval_required"] is True
-assert state["approved"] is False
+    def test_prepare_request_requires_approval(self):
+        state = prepare_request(self.request)
 
-print("\nApproval decision:")
+        self.assertTrue(state["approval_required"])
+        self.assertFalse(state["approved"])
 
-approved_state = approve_request(state)
+    def test_approve_request(self):
+        state = prepare_request(self.request)
 
-print("Approved:", approved_state.approved)
-print("Current Step:", approved_state.current_step)
+        approved_state = approve_request(state)
 
-assert approved_state.approved is True
+        self.assertTrue(approved_state.approved)
+        self.assertEqual(
+            approved_state.current_step,
+            "Action approved",
+        )
 
-print("\nController approval test passed.")
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
