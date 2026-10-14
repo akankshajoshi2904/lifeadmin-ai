@@ -1,5 +1,16 @@
 
+import sys
+from pathlib import Path
+from html import escape
+
 import streamlit as st
+
+# Streamlit Cloud can launch this file with the app/ directory as the
+# initial import path. Add the repository root so `import app...` works
+# consistently both locally and on Streamlit Community Cloud.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.utils.pdf_reader import extract_text_from_pdf
 from app.document_analyzer import analyze_document
@@ -216,9 +227,13 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
+    if "navigation_page" not in st.session_state:
+        st.session_state.navigation_page = "Overview"
+
     page = st.radio(
         "NAVIGATION",
         ["Overview", "AI Assistant", "Documents", "My Tasks"],
+        key="navigation_page",
         label_visibility="visible",
     )
 
@@ -340,7 +355,7 @@ if page == "Overview":
                 type="primary",
                 use_container_width=True,
             ):
-                st.session_state.navigate_to = "AI Assistant"
+                st.session_state.navigation_page = "AI Assistant"
                 st.rerun()
 
     with c2:
@@ -355,15 +370,8 @@ if page == "Overview":
                 key="overview_documents",
                 use_container_width=True,
             ):
-                st.session_state.navigate_to = "Documents"
+                st.session_state.navigation_page = "Documents"
                 st.rerun()
-
-    # Keep navigation buttons responsive on the next rerun.
-    if "navigate_to" in st.session_state:
-        target = st.session_state.pop("navigate_to")
-        st.info(
-            f"Select **{target}** in the sidebar to continue."
-        )
 
     st.write("")
     st.markdown(
@@ -375,7 +383,7 @@ if page == "Overview":
         for task in pending_tasks[:4]:
             with st.container(border=True):
                 st.markdown(
-                    f'<div class="task-name">{task[1]}</div>',
+                    f'<div class="task-name">{escape(str(task[1]))}</div>',
                     unsafe_allow_html=True,
                 )
                 a, b, c = st.columns(3)
@@ -624,7 +632,7 @@ elif page == "My Tasks":
 
             with st.container(border=True):
                 st.markdown(
-                    f'<div class="task-name">{title}</div>',
+                    f'<div class="task-name">{escape(str(title))}</div>',
                     unsafe_allow_html=True,
                 )
 
