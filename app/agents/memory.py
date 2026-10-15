@@ -2,10 +2,10 @@
 from app.task_manager import get_tasks
 
 
-def get_memory():
-    """Retrieve saved tasks as the agent's memory."""
+def get_memory(session_id):
+    """Retrieve only tasks belonging to the current session."""
 
-    tasks = get_tasks()
+    tasks = get_tasks(session_id=session_id)
     memory = []
 
     for task in tasks:

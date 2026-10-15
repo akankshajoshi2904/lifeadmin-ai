@@ -19,7 +19,7 @@ def detect_intent_node(state: AgentState):
 
 
 def get_tasks_node(state: AgentState):
-    state.tasks = get_memory()
+    state.tasks = get_memory(state.session_id)
     state.current_step = "Tasks retrieved from memory"
     return state
 
@@ -87,9 +87,6 @@ def find_requested_task(state):
 
     request = state.user_request.strip()
 
-    # Recognize requests such as:
-    # "Complete my task named test LifeAdmin AI."
-    # "Complete the task called submit my report."
     match = re.search(
         r"\b(?:task|assignment)\s+(?:named|called)\s+(.+?)[?.!]*$",
         request,
@@ -110,8 +107,6 @@ def find_requested_task(state):
 
         return None
 
-    # If no task name was provided, use the highest-priority
-    # task after the existing deadline prioritization.
     return pending_tasks[0]
 
 
@@ -207,6 +202,7 @@ def execute_task_node(state: AgentState):
             title=task_title,
             due_date=due_date,
             priority="Medium",
+            session_id=state.session_id,
         )
 
         if created:
@@ -244,7 +240,17 @@ def execute_task_node(state: AgentState):
             state.current_step = "No action available"
             return state
 
-        complete_task_tool(selected_task["id"])
+        updated = complete_task_tool(
+            selected_task["id"],
+            session_id=state.session_id,
+        )
+
+        if not updated:
+            state.approval_required = False
+            state.approved = False
+            state.response = "The selected task was not found. No changes were made."
+            state.current_step = "No action available"
+            return state
 
         state.response = (
             f"Task completed successfully: {selected_task['title']}."

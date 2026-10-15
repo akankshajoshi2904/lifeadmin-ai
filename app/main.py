@@ -1,13 +1,12 @@
 
 import sys
+import uuid
 from pathlib import Path
 from html import escape
 
 import streamlit as st
 
-# Streamlit Cloud can launch this file with the app/ directory as the
-# initial import path. Add the repository root so `import app...` works
-# consistently both locally and on Streamlit Community Cloud.
+# Ensure imports work locally and on Streamlit Community Cloud.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -31,6 +30,27 @@ st.set_page_config(
 )
 
 create_tasks_table()
+
+# -------------------- Session state --------------------
+
+# Each Streamlit browser session gets its own task scope.
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+
+defaults = {
+    "prepared_request": None,
+    "agent_result": None,
+    "document_analysis": None,
+    "document_name": None,
+    "document_text": None,
+    "navigation_page": "Overview",
+}
+
+for key, value in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+session_id = st.session_state.session_id
 
 
 # -------------------- Styling --------------------
@@ -200,21 +220,6 @@ st.markdown(
 )
 
 
-# -------------------- Session state --------------------
-
-defaults = {
-    "prepared_request": None,
-    "agent_result": None,
-    "document_analysis": None,
-    "document_name": None,
-    "document_text": None,
-}
-
-for key, value in defaults.items():
-    if key not in st.session_state:
-        st.session_state[key] = value
-
-
 # -------------------- Sidebar --------------------
 
 with st.sidebar:
@@ -227,9 +232,6 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    if "navigation_page" not in st.session_state:
-        st.session_state.navigation_page = "Overview"
-
     page = st.radio(
         "NAVIGATION",
         ["Overview", "AI Assistant", "Documents", "My Tasks"],
@@ -238,17 +240,19 @@ with st.sidebar:
     )
 
     st.divider()
-
     st.caption("Less admin. More time for what matters.")
 
 
 # -------------------- Shared data --------------------
 
-tasks = get_tasks()
+# Only retrieve tasks belonging to this browser session.
+tasks = get_tasks(session_id=session_id)
+
 pending_tasks = [
     task for task in tasks
     if str(task[4]).lower() == "pending"
 ]
+
 completed_tasks = [
     task for task in tasks
     if str(task[4]).lower() == "completed"
@@ -274,6 +278,7 @@ if page == "Overview":
         '</div>',
         unsafe_allow_html=True,
     )
+
 elif page == "AI Assistant":
     st.markdown(
         '<div class="hero-title">Your personal assistant.</div>',
@@ -286,6 +291,7 @@ elif page == "AI Assistant":
         '</div>',
         unsafe_allow_html=True,
     )
+
 elif page == "Documents":
     st.markdown(
         '<div class="hero-title">Your documents, understood.</div>',
@@ -298,6 +304,7 @@ elif page == "Documents":
         '</div>',
         unsafe_allow_html=True,
     )
+
 else:
     st.markdown(
         '<div class="hero-title">Everything on your plate.</div>',
@@ -325,7 +332,10 @@ if page == "Overview":
         st.metric("Completed", len(completed_tasks))
 
     with c3:
-        st.metric("Documents analyzed", 1 if st.session_state.document_analysis else 0)
+        st.metric(
+            "Documents analyzed",
+            1 if st.session_state.document_analysis else 0,
+        )
 
     st.write("")
 
@@ -403,8 +413,8 @@ elif page == "AI Assistant":
     )
     st.markdown(
         '<div class="section-subtitle">'
-        'Use everyday language. For example: “Remind me to submit '
-        'my project report by 20 October 2026.”'
+        'Use everyday language. For example: "Remind me to submit '
+        'my project report by 20 October 2026."'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -429,15 +439,32 @@ elif page == "AI Assistant":
         else:
             try:
                 with st.spinner("Understanding your request..."):
-                    result = prepare_request(user_request.strip())
+                    result = prepare_request(
+                        user_request.strip(),
+                        session_id=session_id,
+                    )
+
                 st.session_state.prepared_request = result
                 st.session_state.agent_result = None
+
             except Exception as exc:
-                st.error(f"The assistant couldn't prepare this request: {exc}")
+                st.error(
+                    f"The assistant couldn't prepare this request: {exc}"
+                )
 
     result = st.session_state.prepared_request
 
     if result:
+        # Do not display or execute a request belonging to another session.
+        if result.get("session_id") != session_id:
+            st.session_state.prepared_request = None
+            st.session_state.agent_result = None
+            st.warning(
+                "This request belongs to an earlier or different session. "
+                "Please prepare your request again."
+            )
+            st.stop()
+
         st.write("")
         st.markdown(
             '<div class="section-title">Review your plan</div>',
@@ -445,20 +472,29 @@ elif page == "AI Assistant":
         )
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("Request type", str(result.get("intent", "Unknown")).replace("_", " ").title())
+        c1.metric(
+            "Request type",
+            str(result.get("intent", "Unknown")).replace("_", " ").title(),
+        )
         c2.metric(
             "Approval needed",
             "Yes" if result.get("approval_required") else "No",
         )
         c3.metric(
             "Status",
-            "Approved" if result.get("approved") else "Awaiting review"
-            if result.get("approval_required") else "Ready",
+            (
+                "Approved"
+                if result.get("approved")
+                else "Awaiting review"
+                if result.get("approval_required")
+                else "Ready"
+            ),
         )
 
         with st.container(border=True):
             st.subheader("Proposed action")
             plan = result.get("plan") or []
+
             if plan:
                 for index, step in enumerate(plan, start=1):
                     st.markdown(f"**{index}.** {step}")
@@ -484,14 +520,27 @@ elif page == "AI Assistant":
                     key="approve_agent_action",
                 ):
                     try:
+                        # Check the session again immediately before execution.
+                        if result.get("session_id") != st.session_state.session_id:
+                            st.error(
+                                "Session mismatch. Please prepare the request again."
+                            )
+                            st.stop()
+
                         approved_state = approve_request(result)
+
                         executed_state = execute_approved_request(
                             approved_state.__dict__
                         )
+
                         st.session_state.agent_result = executed_state
-                        st.session_state.prepared_request = executed_state.__dict__
+                        st.session_state.prepared_request = (
+                            executed_state.__dict__
+                        )
+
                         st.success("The approval workflow finished.")
                         st.rerun()
+
                     except Exception as exc:
                         st.error(f"The action could not be executed: {exc}")
 
@@ -504,9 +553,14 @@ elif page == "AI Assistant":
                     try:
                         rejected_state = reject_request(result)
                         st.session_state.agent_result = rejected_state
-                        st.session_state.prepared_request = rejected_state.__dict__
-                        st.info("Action rejected. No approved action was executed.")
+                        st.session_state.prepared_request = (
+                            rejected_state.__dict__
+                        )
+                        st.info(
+                            "Action rejected. No approved action was executed."
+                        )
                         st.rerun()
+
                     except Exception as exc:
                         st.error(f"The action could not be rejected: {exc}")
 
@@ -547,7 +601,9 @@ elif page == "Documents":
                     st.session_state.document_text = text
 
                     if text and text.strip():
-                        st.session_state.document_analysis = analyze_document(text)
+                        st.session_state.document_analysis = analyze_document(
+                            text
+                        )
                     else:
                         st.session_state.document_analysis = None
 
@@ -555,7 +611,9 @@ elif page == "Documents":
                 st.error(f"Unable to analyze this PDF: {exc}")
 
     if st.session_state.document_name:
-        st.caption(f"Last selected document: {st.session_state.document_name}")
+        st.caption(
+            f"Last selected document: {st.session_state.document_name}"
+        )
 
     analysis = st.session_state.document_analysis
 
@@ -578,6 +636,7 @@ elif page == "Documents":
 
             st.markdown("**Priority**")
             priority = analysis.get("priority") or "Not determined"
+
             if priority == "High":
                 st.error(f"Priority: {priority}")
             elif priority == "Medium":
@@ -594,6 +653,7 @@ elif page == "Documents":
         with st.expander("View extracted text"):
             extracted = st.session_state.document_text or ""
             st.text(extracted[:12000])
+
             if len(extracted) > 12000:
                 st.caption("Showing the first 12,000 characters.")
 
@@ -620,6 +680,7 @@ elif page == "My Tasks":
     )
 
     visible_tasks = tasks
+
     if filter_status != "All":
         visible_tasks = [
             task for task in tasks
