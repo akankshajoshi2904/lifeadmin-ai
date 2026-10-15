@@ -1,5 +1,6 @@
 
 import os
+import re
 
 from dotenv import load_dotenv
 
@@ -15,59 +16,140 @@ VALID_INTENTS = {
 
 def detect_intent_with_rules(user_request: str) -> str:
     """Detect intent using local rules without an API call."""
-    request = user_request.lower()
+    request = user_request.lower().strip()
 
+    if not request:
+        return "review_tasks"
+
+    # Task completion requests
     if any(
         phrase in request
         for phrase in [
-            "create a task",
-            "add a task",
-            "new task",
-            "remind me",
-        ]
-    ):
-        return "create_task"
-
-    if any(
-        phrase in request
-        for phrase in [
-            "complete",
-            "finish",
-            "done",
             "mark as completed",
+            "mark completed",
+            "complete task",
+            "complete the task",
+            "mark as done",
+            "finish the task",
+            "task is done",
         ]
     ):
         return "complete_task"
 
+    # Detect adding an item to a to-do list BEFORE review rules.
+    if re.search(
+        r"\b(add|put|include)\b.+\bto my (to-do|todo) list\b",
+        request,
+    ):
+        return "create_task"
+
+    # Explicit and natural task-creation requests
     if any(
         phrase in request
         for phrase in [
-            "upcoming",
+            "create a task",
+            "create task",
+            "add a task",
+            "add task",
+            "new task",
+            "make a task",
+            "make a reminder",
+            "set a reminder",
+            "remind me",
+            "schedule a task",
+            "i need to",
+            "i have to",
+            "i must",
+            "i should",
+            "don't forget to",
+            "need to remember to",
+            "remember to",
+        ]
+    ):
+        return "create_task"
+
+    # Review existing tasks
+    if any(
+        phrase in request
+        for phrase in [
+            "show my tasks",
+            "list my tasks",
+            "review my tasks",
+            "review tasks",
+            "what are my tasks",
+            "what tasks do i have",
+            "how many tasks",
+            "show tasks",
+            "list tasks",
+            "my to-do list",
+            "my todo list",
+        ]
+    ):
+        return "review_tasks"
+
+    # Upcoming tasks and deadlines
+    if any(
+        phrase in request
+        for phrase in [
+            "upcoming tasks",
+            "what is due",
+            "what's due",
             "due soon",
-            "next",
+            "tasks due",
+            "deadlines coming up",
+            "what do i need to do next",
         ]
     ):
         return "upcoming_tasks"
+
+    # Common actions expressed with a deadline
+    has_deadline = re.search(
+        r"\b(by|before|on|tomorrow|tonight|today|next week|"
+        r"next month|this weekend)\b",
+        request,
+    )
+
+    action_verbs = {
+        "pay", "submit", "finish", "complete", "attend",
+        "buy", "send", "prepare", "visit", "go", "call",
+        "email", "study", "renew", "book", "upload",
+        "register", "apply", "meet", "do", "file",
+    }
+
+    if has_deadline and action_verbs.intersection(request.split()):
+        return "create_task"
 
     return "review_tasks"
 
 
 def detect_intent(user_request: str) -> str:
-    """Use OpenAI for intent classification, with a rule-based fallback."""
+    """Classify requests using rules and AI when available."""
     if not user_request or not user_request.strip():
         return "review_tasks"
 
+    rule_intent = detect_intent_with_rules(user_request)
+
+    # Trust a clear rule-based match without requiring an API call.
+    if rule_intent != "review_tasks":
+        return rule_intent
+
     if not os.getenv("OPENAI_API_KEY"):
-        return detect_intent_with_rules(user_request)
+        return rule_intent
 
     try:
         from app.ai_client import ask_ai
 
         answer = ask_ai(
-            "Classify the user's request into exactly one of these "
-            "categories: create_task, complete_task, upcoming_tasks, "
-            "review_tasks.\n"
-            "Return only the category name, with no explanation.\n\n"
+            "Classify the user's request into exactly one category: "
+            "create_task, complete_task, upcoming_tasks, review_tasks.\n"
+            "Use create_task when the user wants to do something or "
+            "expresses an obligation, even without saying 'create' or "
+            "'task'. Examples include paying bills, submitting assignments, "
+            "adding items to a to-do list, and setting reminders.\n"
+            "Use review_tasks when the user asks to see existing tasks.\n"
+            "Use upcoming_tasks when the user asks about upcoming deadlines.\n"
+            "Use complete_task when the user asks to mark a task as done.\n"
+            "Return only the category name.\n\n"
             f"User request: {user_request}"
         )
 
@@ -77,7 +159,6 @@ def detect_intent(user_request: str) -> str:
             return intent
 
     except Exception:
-        # Keep the application usable when the API is unavailable.
         pass
 
-    return detect_intent_with_rules(user_request)
+    return rule_intent
