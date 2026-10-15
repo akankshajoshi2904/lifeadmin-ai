@@ -79,7 +79,7 @@ def prioritize_tasks_node(state: AgentState):
 
 
 def find_requested_task(state):
-    """Find a specifically named task, or choose the next task if unnamed."""
+    """Find the exact requested pending task; never guess."""
     pending_tasks = state.tasks
 
     if not pending_tasks:
@@ -87,6 +87,7 @@ def find_requested_task(state):
 
     request = state.user_request.strip()
 
+    # Handle requests such as "Complete task named Gym".
     match = re.search(
         r"\b(?:task|assignment)\s+(?:named|called)\s+(.+?)[?.!]*$",
         request,
@@ -100,14 +101,20 @@ def find_requested_task(state):
             "",
             requested_title,
         ).strip()
+    else:
+        # Handle requests such as:
+        # "Mark Add gym to my to-do list as completed"
+        requested_title = extract_task_title(request)
 
-        for task in pending_tasks:
-            if task["title"].casefold() == requested_title.casefold():
-                return task
+    requested_title = requested_title.strip().strip("\"' ")
 
-        return None
+    # Only select a task whose title matches exactly.
+    for task in pending_tasks:
+        if task["title"].strip().casefold() == requested_title.casefold():
+            return task
 
-    return pending_tasks[0]
+    # Do not complete an unrelated task if the title doesn't match.
+    return None
 
 
 def plan_next_action_node(state: AgentState):
@@ -221,14 +228,20 @@ def execute_task_node(state: AgentState):
         if not state.plan:
             state.approval_required = False
             state.approved = False
+            state.response = (
+                "I couldn't find the requested task in your pending tasks. "
+                "No changes were made."
+            )
             state.current_step = "No action available"
             return state
 
         selected_title = state.plan[0]
+
         selected_task = next(
             (
                 task for task in state.tasks
-                if task["title"].casefold() == selected_title.casefold()
+                if task["title"].strip().casefold()
+                == selected_title.strip().casefold()
             ),
             None,
         )
@@ -236,7 +249,9 @@ def execute_task_node(state: AgentState):
         if selected_task is None:
             state.approval_required = False
             state.approved = False
-            state.response = "The selected task was not found. No changes were made."
+            state.response = (
+                "The selected task was not found. No changes were made."
+            )
             state.current_step = "No action available"
             return state
 
@@ -248,7 +263,9 @@ def execute_task_node(state: AgentState):
         if not updated:
             state.approval_required = False
             state.approved = False
-            state.response = "The selected task was not found. No changes were made."
+            state.response = (
+                "The selected task was not found. No changes were made."
+            )
             state.current_step = "No action available"
             return state
 
@@ -274,12 +291,17 @@ def summarize_tasks_node(state: AgentState):
             if due_date:
                 state.response += f"Due date: {due_date}. "
 
-            state.response += "Human approval is required before creation."
+            state.response += (
+                "Human approval is required before creation."
+            )
 
         return state
 
     if state.intent == "complete_task":
-        if state.current_step == "Execution blocked" and state.plan:
+        if (
+            state.current_step == "Execution blocked"
+            and state.plan
+        ):
             state.response = (
                 f"Ready to complete task: {state.plan[0]}. "
                 "Human approval is required before execution."
@@ -299,11 +321,13 @@ def summarize_tasks_node(state: AgentState):
 
         if upcoming_tasks:
             task_lines = [
-                f"{task['title']} — Due: {task['due_date']} ({task['urgency']})"
+                f"{task['title']} — Due: {task['due_date']} "
+                f"({task['urgency']})"
                 for task in upcoming_tasks
             ]
             state.response = (
-                "Here are your upcoming tasks:\n" + "\n".join(task_lines)
+                "Here are your upcoming tasks:\n"
+                + "\n".join(task_lines)
             )
         else:
             state.response = "You have no upcoming tasks."
@@ -317,7 +341,9 @@ def summarize_tasks_node(state: AgentState):
             task for task in state.tasks
             if task["priority"] == "High"
         ]
-        next_action = state.plan[0] if state.plan else "Review your tasks"
+        next_action = (
+            state.plan[0] if state.plan else "Review your tasks"
+        )
 
         state.response = (
             f"You have {len(state.tasks)} pending task(s). "

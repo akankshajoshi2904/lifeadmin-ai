@@ -21,29 +21,30 @@ def detect_intent_with_rules(user_request: str) -> str:
     if not request:
         return "review_tasks"
 
-    # Task completion requests
+    # Detect task completion requests in different wordings.
+    completion_patterns = [
+        r"\bmark\b.+\bas\s+(?:completed|complete|done)\b",
+        r"\bmark\b.+\b(?:completed|complete|done)\s*[.!?]*$",
+        r"\bcomplete\s+(?:the\s+)?task\b",
+        r"\bfinish\s+(?:the\s+)?task\b",
+        r"\btask\s+is\s+done\b",
+        r"\bmark\s+task\s+as\s+done\b",
+    ]
+
     if any(
-        phrase in request
-        for phrase in [
-            "mark as completed",
-            "mark completed",
-            "complete task",
-            "complete the task",
-            "mark as done",
-            "finish the task",
-            "task is done",
-        ]
+        re.search(pattern, request)
+        for pattern in completion_patterns
     ):
         return "complete_task"
 
-    # Detect adding an item to a to-do list BEFORE review rules.
+    # Detect adding an item to a to-do list before review rules.
     if re.search(
         r"\b(add|put|include)\b.+\bto my (to-do|todo) list\b",
         request,
     ):
         return "create_task"
 
-    # Explicit and natural task-creation requests
+    # Explicit and natural task-creation requests.
     if any(
         phrase in request
         for phrase in [
@@ -68,7 +69,7 @@ def detect_intent_with_rules(user_request: str) -> str:
     ):
         return "create_task"
 
-    # Review existing tasks
+    # Review existing tasks.
     if any(
         phrase in request
         for phrase in [
@@ -87,7 +88,7 @@ def detect_intent_with_rules(user_request: str) -> str:
     ):
         return "review_tasks"
 
-    # Upcoming tasks and deadlines
+    # Upcoming tasks and deadlines.
     if any(
         phrase in request
         for phrase in [
@@ -102,7 +103,7 @@ def detect_intent_with_rules(user_request: str) -> str:
     ):
         return "upcoming_tasks"
 
-    # Common actions expressed with a deadline
+    # Common actions expressed with a deadline.
     has_deadline = re.search(
         r"\b(by|before|on|tomorrow|tonight|today|next week|"
         r"next month|this weekend)\b",
@@ -129,7 +130,7 @@ def detect_intent(user_request: str) -> str:
 
     rule_intent = detect_intent_with_rules(user_request)
 
-    # Trust a clear rule-based match without requiring an API call.
+    # Trust clear rule-based matches without requiring an API call.
     if rule_intent != "review_tasks":
         return rule_intent
 
@@ -142,13 +143,12 @@ def detect_intent(user_request: str) -> str:
         answer = ask_ai(
             "Classify the user's request into exactly one category: "
             "create_task, complete_task, upcoming_tasks, review_tasks.\n"
-            "Use create_task when the user wants to do something or "
-            "expresses an obligation, even without saying 'create' or "
-            "'task'. Examples include paying bills, submitting assignments, "
-            "adding items to a to-do list, and setting reminders.\n"
+            "Use create_task when the user wants to create a task or "
+            "expresses an obligation.\n"
+            "Use complete_task when the user asks to mark an existing "
+            "task as completed or done, or asks to finish a task.\n"
             "Use review_tasks when the user asks to see existing tasks.\n"
             "Use upcoming_tasks when the user asks about upcoming deadlines.\n"
-            "Use complete_task when the user asks to mark a task as done.\n"
             "Return only the category name.\n\n"
             f"User request: {user_request}"
         )
