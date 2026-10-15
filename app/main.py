@@ -1,6 +1,4 @@
-
 import sys
-import uuid
 from pathlib import Path
 from html import escape
 
@@ -8,6 +6,7 @@ import streamlit as st
 
 # Ensure imports work locally and on Streamlit Community Cloud.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -21,7 +20,6 @@ from app.agents.controller import (
     execute_approved_request,
 )
 
-
 st.set_page_config(
     page_title="LifeAdmin AI",
     page_icon="L",
@@ -31,11 +29,48 @@ st.set_page_config(
 
 create_tasks_table()
 
-# -------------------- Session state --------------------
+# -------------------- Google Authentication --------------------
 
-# Each Streamlit browser session gets its own task scope.
-if "session_id" not in st.session_state:
-    st.session_state.session_id = str(uuid.uuid4())
+if not st.user.is_logged_in:
+    st.markdown(
+        """
+        <style>
+        .stApp {
+            background: #f6f7fb;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.title("LifeAdmin AI")
+    st.subheader("Your personal administration assistant")
+    st.write(
+        "Sign in with Google to manage your personal tasks "
+        "and documents."
+    )
+
+    st.button(
+        "Continue with Google",
+        type="primary",
+        use_container_width=True,
+        on_click=st.login,
+        args=("google",),
+    )
+
+    st.stop()
+
+# Google's stable account identifier.
+user_id = st.user.get("sub")
+
+if not user_id:
+    st.error(
+        "Google sign-in did not provide an account identifier. "
+        "Please sign out and sign in again."
+    )
+    st.stop()
+
+# -------------------- Session State --------------------
 
 defaults = {
     "prepared_request": None,
@@ -49,9 +84,6 @@ defaults = {
 for key, value in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
-
-session_id = st.session_state.session_id
-
 
 # -------------------- Styling --------------------
 
@@ -219,7 +251,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
 # -------------------- Sidebar --------------------
 
 with st.sidebar:
@@ -227,10 +258,18 @@ with st.sidebar:
         '<div class="brand">LifeAdmin<span>.</span></div>',
         unsafe_allow_html=True,
     )
+
     st.markdown(
-        '<div class="sidebar-caption">YOUR PERSONAL ADMIN ASSISTANT</div>',
+        '<div class="sidebar-caption">'
+        'YOUR PERSONAL ADMIN ASSISTANT'
+        '</div>',
         unsafe_allow_html=True,
     )
+
+    st.caption(f"Signed in as: {st.user.get('email', 'Google user')}")
+
+    if st.button("Sign out", use_container_width=True):
+        st.logout()
 
     page = st.radio(
         "NAVIGATION",
@@ -242,11 +281,10 @@ with st.sidebar:
     st.divider()
     st.caption("Less admin. More time for what matters.")
 
+# -------------------- Shared Data --------------------
 
-# -------------------- Shared data --------------------
-
-# Only retrieve tasks belonging to this browser session.
-tasks = get_tasks(session_id=session_id)
+# Each user's tasks are identified by their Google account ID.
+tasks = get_tasks(session_id=user_id)
 
 pending_tasks = [
     task for task in tasks
@@ -257,7 +295,6 @@ completed_tasks = [
     task for task in tasks
     if str(task[4]).lower() == "completed"
 ]
-
 
 # -------------------- Header --------------------
 
@@ -319,7 +356,6 @@ else:
 
 st.write("")
 
-
 # -------------------- Overview --------------------
 
 if page == "Overview":
@@ -359,6 +395,7 @@ if page == "Overview":
                 "Create a task, review your workload, or prepare "
                 "an action with human approval."
             )
+
             if st.button(
                 "Open assistant",
                 key="overview_assistant",
@@ -375,6 +412,7 @@ if page == "Overview":
                 "Upload a PDF to find important dates, required "
                 "actions, and priority."
             )
+
             if st.button(
                 "Analyze a document",
                 key="overview_documents",
@@ -396,13 +434,13 @@ if page == "Overview":
                     f'<div class="task-name">{escape(str(task[1]))}</div>',
                     unsafe_allow_html=True,
                 )
+
                 a, b, c = st.columns(3)
                 a.caption(f"Due: {task[2] or 'Not set'}")
                 b.caption(f"Priority: {task[3] or 'Medium'}")
                 c.caption(f"Status: {task[4]}")
     else:
         st.info("You're all caught up. Add a task with the AI Assistant.")
-
 
 # -------------------- AI Assistant --------------------
 
@@ -427,6 +465,7 @@ elif page == "AI Assistant":
             ),
             height=100,
         )
+
         run_agent = st.form_submit_button(
             "Prepare my request",
             type="primary",
@@ -441,7 +480,7 @@ elif page == "AI Assistant":
                 with st.spinner("Understanding your request..."):
                     result = prepare_request(
                         user_request.strip(),
-                        session_id=session_id,
+                        session_id=user_id,
                     )
 
                 st.session_state.prepared_request = result
@@ -455,13 +494,13 @@ elif page == "AI Assistant":
     result = st.session_state.prepared_request
 
     if result:
-        # Do not display or execute a request belonging to another session.
-        if result.get("session_id") != session_id:
+        # Prevent a prepared action from another account being used.
+        if result.get("session_id") != user_id:
             st.session_state.prepared_request = None
             st.session_state.agent_result = None
             st.warning(
-                "This request belongs to an earlier or different session. "
-                "Please prepare your request again."
+                "This request belongs to another account or an earlier "
+                "session. Please prepare your request again."
             )
             st.stop()
 
@@ -472,14 +511,17 @@ elif page == "AI Assistant":
         )
 
         c1, c2, c3 = st.columns(3)
+
         c1.metric(
             "Request type",
             str(result.get("intent", "Unknown")).replace("_", " ").title(),
         )
+
         c2.metric(
             "Approval needed",
             "Yes" if result.get("approval_required") else "No",
         )
+
         c3.metric(
             "Status",
             (
@@ -520,10 +562,9 @@ elif page == "AI Assistant":
                     key="approve_agent_action",
                 ):
                     try:
-                        # Check the session again immediately before execution.
-                        if result.get("session_id") != st.session_state.session_id:
+                        if result.get("session_id") != user_id:
                             st.error(
-                                "Session mismatch. Please prepare the request again."
+                                "Account mismatch. Please prepare the request again."
                             )
                             st.stop()
 
@@ -552,10 +593,12 @@ elif page == "AI Assistant":
                 ):
                     try:
                         rejected_state = reject_request(result)
+
                         st.session_state.agent_result = rejected_state
                         st.session_state.prepared_request = (
                             rejected_state.__dict__
                         )
+
                         st.info(
                             "Action rejected. No approved action was executed."
                         )
@@ -566,7 +609,6 @@ elif page == "AI Assistant":
 
         elif result.get("current_step") == "Task executed":
             st.success(result.get("response", "Action completed."))
-
 
 # -------------------- Documents --------------------
 
@@ -597,6 +639,7 @@ elif page == "Documents":
             try:
                 with st.spinner("Reading your document..."):
                     text = extract_text_from_pdf(uploaded_file)
+
                     st.session_state.document_name = uploaded_file.name
                     st.session_state.document_text = text
 
@@ -663,11 +706,11 @@ elif page == "Documents":
             "that requires OCR, which is not currently configured."
         )
 
-
 # -------------------- My Tasks --------------------
 
 elif page == "My Tasks":
     c1, c2, c3 = st.columns(3)
+
     c1.metric("Total tasks", len(tasks))
     c2.metric("Pending", len(pending_tasks))
     c3.metric("Completed", len(completed_tasks))
@@ -705,7 +748,6 @@ elif page == "My Tasks":
                 st.caption(f"Task ID: {task_id}")
     else:
         st.info("No tasks match this filter.")
-
 
 # -------------------- Footer --------------------
 
