@@ -5,6 +5,10 @@ from contextlib import contextmanager
 import psycopg2
 
 
+VALID_PRIORITIES = {"Low", "Medium", "High"}
+VALID_STATUSES = {"Pending", "Completed"}
+
+
 def get_database_url():
     """Read the PostgreSQL connection string from environment or Streamlit Secrets."""
     database_url = os.environ.get("DATABASE_URL")
@@ -46,7 +50,7 @@ def database_connection():
 
 
 def create_tasks_table():
-    """Create the tasks table if it does not exist."""
+    """Create the tasks table and its session index if needed."""
     with database_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -61,7 +65,6 @@ def create_tasks_table():
                 )
                 """
             )
-
             cursor.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_tasks_session_id
@@ -93,13 +96,19 @@ def task_exists(title, due_date, session_id):
                 """,
                 (title, due_date, session_id),
             )
-            task = cursor.fetchone()
-
-    return task is not None
+            return cursor.fetchone() is not None
 
 
 def add_task(title, due_date=None, priority="Low", session_id=None):
     session_id = _require_session_id(session_id)
+
+    if not isinstance(title, str) or not title.strip():
+        raise ValueError("Task title cannot be empty.")
+
+    if priority not in VALID_PRIORITIES:
+        raise ValueError("Priority must be Low, Medium, or High.")
+
+    title = title.strip()
 
     if task_exists(title, due_date, session_id):
         return False
@@ -139,15 +148,13 @@ def get_tasks(session_id):
                 """,
                 (session_id,),
             )
-            tasks = cursor.fetchall()
-
-    return tasks
+            return cursor.fetchall()
 
 
 def update_task_status(task_id, status, session_id):
     session_id = _require_session_id(session_id)
 
-    if status not in ("Pending", "Completed"):
+    if status not in VALID_STATUSES:
         raise ValueError("Status must be Pending or Completed.")
 
     with database_connection() as connection:
@@ -156,11 +163,97 @@ def update_task_status(task_id, status, session_id):
                 """
                 UPDATE tasks
                 SET status = %s
-                WHERE id = %s
-                  AND session_id = %s
+                WHERE id = %s AND session_id = %s
                 """,
                 (status, task_id, session_id),
             )
-            updated = cursor.rowcount
+            return cursor.rowcount == 1
 
-    return updated == 1
+
+def update_task_details(
+    task_id,
+    session_id,
+    title=None,
+    due_date=None,
+    priority=None,
+    status=None,
+):
+    """Update supplied task fields without changing other fields."""
+    session_id = _require_session_id(session_id)
+
+    fields = []
+    values = []
+
+    if title is not None:
+        if not isinstance(title, str) or not title.strip():
+            raise ValueError("Task title cannot be empty.")
+        fields.append("title = %s")
+        values.append(title.strip())
+
+    if due_date is not None:
+        if not isinstance(due_date, str) or not due_date.strip():
+            raise ValueError("Use a valid date or None to clear the deadline.")
+        fields.append("due_date = %s")
+        values.append(due_date.strip())
+
+    if priority is not None:
+        if priority not in VALID_PRIORITIES:
+            raise ValueError("Priority must be Low, Medium, or High.")
+        fields.append("priority = %s")
+        values.append(priority)
+
+    if status is not None:
+        if status not in VALID_STATUSES:
+            raise ValueError("Status must be Pending or Completed.")
+        fields.append("status = %s")
+        values.append(status)
+
+    if not fields:
+        raise ValueError("No changes were provided.")
+
+    values.extend([task_id, session_id])
+
+    with database_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                UPDATE tasks
+                SET {", ".join(fields)}
+                WHERE id = %s AND session_id = %s
+                """,
+                tuple(values),
+            )
+            return cursor.rowcount == 1
+
+
+def clear_task_due_date(task_id, session_id):
+    """Remove a deadline without changing other task fields."""
+    session_id = _require_session_id(session_id)
+
+    with database_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE tasks
+                SET due_date = NULL
+                WHERE id = %s AND session_id = %s
+                """,
+                (task_id, session_id),
+            )
+            return cursor.rowcount == 1
+
+
+def delete_task(task_id, session_id):
+    """Delete a task only when it belongs to the current session."""
+    session_id = _require_session_id(session_id)
+
+    with database_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                DELETE FROM tasks
+                WHERE id = %s AND session_id = %s
+                """,
+                (task_id, session_id),
+            )
+            return cursor.rowcount == 1

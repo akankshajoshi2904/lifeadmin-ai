@@ -1,15 +1,26 @@
 
-from datetime import datetime
 import re
+from datetime import datetime
 
 from langgraph.graph import StateGraph, START, END
 
 from app.agents.state import AgentState
 from app.agents.router import detect_intent
-from app.agents.task_parser import extract_task_title
+from app.agents.task_parser import (
+    extract_task_title,
+    extract_requested_priority,
+)
 from app.agents.task_date_parser import extract_due_date
 from app.agents.memory import get_memory
-from app.tools.task_tools import create_task_tool, complete_task_tool
+
+
+ACTION_INTENTS = {
+    "create_task",
+    "complete_task",
+    "reopen_task",
+    "update_task",
+    "delete_task",
+}
 
 
 def detect_intent_node(state: AgentState):
@@ -20,34 +31,30 @@ def detect_intent_node(state: AgentState):
 
 def get_tasks_node(state: AgentState):
     state.tasks = get_memory(state.session_id)
-    state.current_step = "Tasks retrieved from memory"
+    state.current_step = "Tasks retrieved"
     return state
 
 
 def prioritize_tasks_node(state: AgentState):
-    today = datetime.now()
-    prioritized_tasks = []
+    """Add urgency information without removing completed tasks."""
+    today = datetime.now().date()
+    prioritized = []
 
     for task in state.tasks:
-        if isinstance(task, dict):
-            task_id = task["id"]
-            title = task["title"]
-            due_date = task["due_date"]
-            priority = task["priority"]
-            status = task["status"]
-        else:
-            task_id, title, due_date, priority, status = task
-
-        if status != "Pending":
-            continue
+        task = dict(task)
+        due_date = task.get("due_date")
 
         try:
-            due = datetime.strptime(due_date, "%d %B %Y")
-            days_left = (due.date() - today.date()).days
+            due = datetime.strptime(due_date, "%d %B %Y").date()
+            days_left = (due - today).days
         except (ValueError, TypeError):
-            days_left = 9999
+            days_left = None
 
-        if days_left < 0:
+        if task.get("status") != "Pending":
+            urgency = "Completed"
+        elif days_left is None:
+            urgency = "No deadline"
+        elif days_left < 0:
             urgency = "Overdue"
         elif days_left <= 7:
             urgency = "Due Soon"
@@ -56,135 +63,275 @@ def prioritize_tasks_node(state: AgentState):
         else:
             urgency = "Later"
 
-        prioritized_tasks.append({
-            "id": task_id,
-            "title": title,
-            "due_date": due_date,
-            "priority": priority,
-            "status": status,
-            "days_left": days_left,
-            "urgency": urgency,
-        })
+        task["days_left"] = days_left
+        task["urgency"] = urgency
+        prioritized.append(task)
 
-    prioritized_tasks.sort(
+    prioritized.sort(
         key=lambda task: (
-            task["days_left"],
+            task["status"] != "Pending",
+            task["days_left"] is None,
+            task["days_left"] if task["days_left"] is not None else 999999,
             task["priority"] != "High",
         )
     )
 
-    state.tasks = prioritized_tasks
+    state.tasks = prioritized
     state.current_step = "Tasks prioritized"
     return state
 
 
-def find_requested_task(state):
-    """Find the exact requested pending task; never guess."""
-    pending_tasks = state.tasks
-
-    if not pending_tasks:
-        return None
-
+def _extract_target_title(state: AgentState) -> str:
+    """Extract the existing task name from common action requests."""
     request = state.user_request.strip()
 
-    # Handle requests such as "Complete task named Gym".
-    match = re.search(
-        r"\b(?:task|assignment)\s+(?:named|called)\s+(.+?)[?.!]*$",
+    # Support common priority-update wording.
+    patterns = [
+        r"^(?:change|set|update|edit|modify)\s+"
+        r"(?:the\s+)?priority\s+(?:of\s+)?(.+?)\s+"
+        r"(?:to|as|is)\s+(?:low|medium|high)(?:\s+priority)?[.!]?$",
+
+        r"^(?:change|set|update|edit|modify)\s+"
+        r"(.+?)\s+priority\s+(?:to|as|is)\s+"
+        r"(?:low|medium|high)(?:\s+priority)?[.!]?$",
+
+        r"^(?:change|set|update|edit|modify)\s+"
+        r"(?:the\s+)?(?:deadline|due date)\s+(?:of|for)\s+"
+        r"(.+?)\s+(?:to|as)\s+\d{1,2}\s+"
+        r"[A-Za-z]+\s+\d{4}[.!]?$",
+
+        r"^(?:change|set|update|edit|modify)\s+"
+        r"(.+?)\s+(?:deadline|due date)\s+(?:to|as)\s+"
+        r"\d{1,2}\s+[A-Za-z]+\s+\d{4}[.!]?$",
+
+        r"^rename\s+(.+?)\s+to\s+.+[.!]?$",
+        r"^change\s+(?:the\s+)?title\s+of\s+(.+?)\s+"
+        r"to\s+.+[.!]?$",
+    ]
+
+    for pattern in patterns:
+        match = re.match(pattern, request, re.IGNORECASE)
+        if match:
+            return match.group(1).strip().strip("\"' ")
+
+    # Handle explicit task references.
+    named = re.search(
+        r"\b(?:task|assignment)\s+(?:named|called)\s+(.+?)[.!]?$",
         request,
         re.IGNORECASE,
     )
+    if named:
+        return named.group(1).strip().strip("\"' ")
 
-    if match:
-        requested_title = match.group(1).strip().strip("\"' ")
-        requested_title = re.sub(
-            r"[?.!]+$",
-            "",
-            requested_title,
-        ).strip()
+    return extract_task_title(request)
+
+
+def _extract_update_changes(state: AgentState) -> dict:
+    """Extract only changes that are explicitly stated."""
+    request = state.user_request.strip()
+    changes = {}
+
+    priority = extract_requested_priority(request)
+    if priority:
+        changes["priority"] = priority
+
+    due_date = extract_due_date(request)
+    if due_date:
+        changes["due_date"] = due_date
+
+    # Rename an existing task.
+    rename_patterns = [
+        r"^rename\s+.+?\s+to\s+(.+?)[.!]?$",
+        r"^change\s+(?:the\s+)?title\s+of\s+.+?\s+"
+        r"to\s+(.+?)[.!]?$",
+    ]
+
+    for pattern in rename_patterns:
+        match = re.match(pattern, request, re.IGNORECASE)
+        if match:
+            changes["title"] = match.group(1).strip().strip("\"' ")
+            break
+
+    return changes
+
+
+def _find_requested_task(state: AgentState):
+    """Select an exact task match; never guess among similar tasks."""
+    target = _extract_target_title(state).strip().casefold()
+
+    if not target:
+        return None, []
+
+    if state.intent == "complete_task":
+        eligible = [
+            task for task in state.tasks
+            if task["status"] == "Pending"
+        ]
+    elif state.intent == "reopen_task":
+        eligible = [
+            task for task in state.tasks
+            if task["status"] == "Completed"
+        ]
     else:
-        # Handle requests such as:
-        # "Mark Add gym to my to-do list as completed"
-        requested_title = extract_task_title(request)
+        eligible = list(state.tasks)
 
-    requested_title = requested_title.strip().strip("\"' ")
+    exact_matches = [
+        task for task in eligible
+        if task["title"].strip().casefold() == target
+    ]
 
-    # Only select a task whose title matches exactly.
-    for task in pending_tasks:
-        if task["title"].strip().casefold() == requested_title.casefold():
-            return task
+    if len(exact_matches) == 1:
+        return exact_matches[0], []
 
-    # Do not complete an unrelated task if the title doesn't match.
-    return None
+    if len(exact_matches) > 1:
+        return None, exact_matches
+
+    # Suggestions are shown for clarification only, never auto-selected.
+    suggestions = [
+        task for task in eligible
+        if target in task["title"].strip().casefold()
+        or task["title"].strip().casefold() in target
+    ]
+
+    return None, suggestions
 
 
 def plan_next_action_node(state: AgentState):
+    state.plan = []
+    state.selected_task_id = None
+    state.selected_task = {}
+    state.proposed_changes = {}
+    state.clarification_required = False
+    state.approval_required = False
+
     if state.intent == "create_task":
-        task_title = extract_task_title(state.user_request)
+        title = extract_task_title(state.user_request)
         due_date = extract_due_date(state.user_request)
+        priority = extract_requested_priority(state.user_request) or "Medium"
 
-        if due_date:
-            state.plan = [
-                f"Create task: {task_title} — Due: {due_date}"
-            ]
-        else:
-            state.plan = [f"Create task: {task_title}"]
-
-        state.current_step = "Plan created"
-        return state
-
-    if state.intent == "complete_task":
-        selected_task = find_requested_task(state)
-
-        if selected_task is None:
-            state.plan = []
-            state.current_step = "No action available"
+        if not title:
+            state.clarification_required = True
+            state.response = "What task would you like me to create?"
             return state
 
-        state.plan = [selected_task["title"]]
+        state.proposed_changes = {
+            "title": title,
+            "due_date": due_date,
+            "priority": priority,
+        }
+
+        details = [f"Create task: {title}", f"Priority: {priority}"]
+        if due_date:
+            details.append(f"Due date: {due_date}")
+
+        state.plan = details
         state.current_step = "Plan created"
         return state
 
-    state.plan = [task["title"] for task in state.tasks]
+    if state.intent in {
+        "complete_task",
+        "reopen_task",
+        "update_task",
+        "delete_task",
+    }:
+        selected, suggestions = _find_requested_task(state)
+
+        if selected is None:
+            state.clarification_required = True
+            state.current_step = "Clarification required"
+
+            if suggestions:
+                choices = "\n".join(
+                    f"- {task['title']} (ID {task['id']}, "
+                    f"{task['status']})"
+                    for task in suggestions[:5]
+                )
+                state.response = (
+                    "I couldn't identify one exact task. Which task "
+                    "did you mean?\n" + choices
+                )
+            else:
+                state.response = (
+                    "I couldn't find an exact matching task. Please "
+                    "enter its full title as shown in My Tasks. "
+                    "No changes were made."
+                )
+            return state
+
+        state.selected_task_id = selected["id"]
+        state.selected_task = dict(selected)
+
+        if state.intent == "complete_task":
+            state.plan = [f"Complete: {selected['title']}"]
+
+        elif state.intent == "reopen_task":
+            state.plan = [f"Reopen: {selected['title']}"]
+
+        elif state.intent == "delete_task":
+            state.plan = [
+                f"Delete: {selected['title']}",
+                "This action permanently removes the task.",
+            ]
+
+        elif state.intent == "update_task":
+            changes = _extract_update_changes(state)
+
+            if not changes:
+                state.clarification_required = True
+                state.current_step = "Clarification required"
+                state.response = (
+                    f"What would you like to change about "
+                    f"'{selected['title']}'? You can change its title, "
+                    "deadline, or priority."
+                )
+                state.selected_task_id = None
+                state.selected_task = {}
+                return state
+
+            state.proposed_changes = changes
+            state.plan = [f"Update: {selected['title']}"]
+
+            for field, value in changes.items():
+                state.plan.append(f"{field.replace('_', ' ').title()}: {value}")
+
+        state.current_step = "Plan created"
+        return state
+
     state.current_step = "Plan created"
     return state
 
 
 def prepare_execution_node(state: AgentState):
-    if state.intent in ["upcoming_tasks", "review_tasks"]:
+    if state.clarification_required:
+        state.approval_required = False
+        return state
+
+    if state.intent in {"review_tasks", "upcoming_tasks"}:
         state.approval_required = False
         state.current_step = "Information ready"
         return state
 
-    if state.intent == "create_task":
-        state.approval_required = True
-        state.response = (
-            f"Task ready to create: {extract_task_title(state.user_request)}. "
-            + (
-                f"Due date: {extract_due_date(state.user_request)}. "
-                if extract_due_date(state.user_request)
-                else ""
-            )
-            + "Human approval is required before creation."
-        )
-        state.current_step = "Waiting for approval"
-        return state
-
-    if state.intent == "complete_task":
-        if not state.plan:
+    if state.intent in ACTION_INTENTS:
+        if state.intent != "create_task" and state.selected_task_id is None:
             state.approval_required = False
-            state.response = (
-                "I couldn't find the requested task in your pending tasks. "
-                "No changes were made."
-            )
             state.current_step = "No action available"
             return state
 
         state.approval_required = True
-        state.response = (
-            f"Ready to complete task: {state.plan[0]}. "
-            "Human approval is required before execution."
-        )
+        state.approved = False
         state.current_step = "Waiting for approval"
+
+        if state.intent == "create_task":
+            state.response = (
+                "Please review the proposed task. Nothing will be saved "
+                "until you approve it."
+            )
+        else:
+            state.response = (
+                "Please review the exact task and proposed action. "
+                "Nothing will change until you approve it."
+            )
+
         return state
 
     state.approval_required = False
@@ -193,177 +340,74 @@ def prepare_execution_node(state: AgentState):
 
 
 def execute_task_node(state: AgentState):
-    if state.intent in ["upcoming_tasks", "review_tasks"]:
+    """Never execute a mutation during preparation."""
+    if state.intent in ACTION_INTENTS and state.approval_required:
+        state.current_step = "Waiting for approval"
+    else:
         state.current_step = "Information only"
-        return state
 
-    if not state.approval_required or not state.approved:
-        state.current_step = "Execution blocked"
-        return state
-
-    if state.intent == "create_task":
-        task_title = extract_task_title(state.user_request)
-        due_date = extract_due_date(state.user_request)
-
-        created = create_task_tool(
-            title=task_title,
-            due_date=due_date,
-            priority="Medium",
-            session_id=state.session_id,
-        )
-
-        if created:
-            state.response = f"Task created successfully: {task_title}."
-            if due_date:
-                state.response += f" Due date: {due_date}."
-        else:
-            state.response = f"The task already exists: {task_title}."
-
-        state.approval_required = False
-        state.approved = False
-        state.current_step = "Task executed"
-        return state
-
-    if state.intent == "complete_task":
-        if not state.plan:
-            state.approval_required = False
-            state.approved = False
-            state.response = (
-                "I couldn't find the requested task in your pending tasks. "
-                "No changes were made."
-            )
-            state.current_step = "No action available"
-            return state
-
-        selected_title = state.plan[0]
-
-        selected_task = next(
-            (
-                task for task in state.tasks
-                if task["title"].strip().casefold()
-                == selected_title.strip().casefold()
-            ),
-            None,
-        )
-
-        if selected_task is None:
-            state.approval_required = False
-            state.approved = False
-            state.response = (
-                "The selected task was not found. No changes were made."
-            )
-            state.current_step = "No action available"
-            return state
-
-        updated = complete_task_tool(
-            selected_task["id"],
-            session_id=state.session_id,
-        )
-
-        if not updated:
-            state.approval_required = False
-            state.approved = False
-            state.response = (
-                "The selected task was not found. No changes were made."
-            )
-            state.current_step = "No action available"
-            return state
-
-        state.response = (
-            f"Task completed successfully: {selected_task['title']}."
-        )
-        state.approval_required = False
-        state.approved = False
-        state.current_step = "Task executed"
-        return state
-
-    state.current_step = "No action available"
     return state
 
 
 def summarize_tasks_node(state: AgentState):
-    if state.intent == "create_task":
-        if state.current_step == "Execution blocked":
-            task_title = extract_task_title(state.user_request)
-            due_date = extract_due_date(state.user_request)
-
-            state.response = f"Task ready to create: {task_title}. "
-            if due_date:
-                state.response += f"Due date: {due_date}. "
-
-            state.response += (
-                "Human approval is required before creation."
-            )
-
+    if state.clarification_required:
         return state
 
-    if state.intent == "complete_task":
-        if (
-            state.current_step == "Execution blocked"
-            and state.plan
-        ):
-            state.response = (
-                f"Ready to complete task: {state.plan[0]}. "
-                "Human approval is required before execution."
-            )
+    if state.intent in ACTION_INTENTS:
         return state
 
-    if not state.tasks:
-        state.response = "You have no pending tasks."
-        state.current_step = "Tasks summarized"
-        return state
+    pending = [
+        task for task in state.tasks
+        if task["status"] == "Pending"
+    ]
 
     if state.intent == "upcoming_tasks":
-        upcoming_tasks = [
-            task for task in state.tasks
-            if task["urgency"] in ["Upcoming", "Due Soon", "Overdue"]
+        upcoming = [
+            task for task in pending
+            if task["urgency"] in {"Overdue", "Due Soon", "Upcoming"}
         ]
 
-        if upcoming_tasks:
-            task_lines = [
-                f"{task['title']} — Due: {task['due_date']} "
-                f"({task['urgency']})"
-                for task in upcoming_tasks
-            ]
-            state.response = (
-                "Here are your upcoming tasks:\n"
-                + "\n".join(task_lines)
-            )
-        else:
+        if not upcoming:
             state.response = "You have no upcoming tasks."
+        else:
+            lines = [
+                f"- {task['title']} — Due: "
+                f"{task['due_date'] or 'Not set'} ({task['urgency']})"
+                for task in upcoming
+            ]
+            state.response = "Here are your upcoming tasks:\n" + "\n".join(lines)
 
     else:
-        due_soon = [
-            task for task in state.tasks
-            if task["urgency"] in ["Overdue", "Due Soon"]
-        ]
-        high_priority = [
-            task for task in state.tasks
-            if task["priority"] == "High"
-        ]
-        next_action = (
-            state.plan[0] if state.plan else "Review your tasks"
-        )
+        if not pending:
+            state.response = "You have no pending tasks."
+        else:
+            high_priority = sum(
+                task["priority"] == "High" for task in pending
+            )
+            due_soon = sum(
+                task["urgency"] in {"Overdue", "Due Soon"}
+                for task in pending
+            )
 
-        state.response = (
-            f"You have {len(state.tasks)} pending task(s). "
-            f"{len(high_priority)} are high priority. "
-            f"{len(due_soon)} need attention within the next 7 days. "
-            f"Your next action should be: {next_action}."
-        )
+            lines = [
+                f"- {task['title']} | Due: {task['due_date'] or 'Not set'}"
+                f" | Priority: {task['priority'] or 'Medium'}"
+                for task in pending
+            ]
+
+            state.response = (
+                f"You have {len(pending)} pending task(s), "
+                f"{high_priority} high-priority task(s), and "
+                f"{due_soon} overdue or near-deadline task(s).\n\n"
+                + "\n".join(lines)
+            )
 
     state.current_step = "Tasks summarized"
     return state
 
 
 def route_by_intent(state: AgentState):
-    if state.intent == "complete_task":
-        return "complete_task"
-    if state.intent == "upcoming_tasks":
-        return "upcoming_tasks"
-    if state.intent == "create_task":
-        return "create_task"
-    return "review_tasks"
+    return "get_tasks"
 
 
 graph = StateGraph(AgentState)
@@ -377,18 +421,11 @@ graph.add_node("execute_task", execute_task_node)
 graph.add_node("summarize_tasks", summarize_tasks_node)
 
 graph.add_edge(START, "detect_intent")
-
 graph.add_conditional_edges(
     "detect_intent",
     route_by_intent,
-    {
-        "complete_task": "get_tasks",
-        "upcoming_tasks": "get_tasks",
-        "create_task": "get_tasks",
-        "review_tasks": "get_tasks",
-    },
+    {"get_tasks": "get_tasks"},
 )
-
 graph.add_edge("get_tasks", "prioritize_tasks")
 graph.add_edge("prioritize_tasks", "plan_next_action")
 graph.add_edge("plan_next_action", "prepare_execution")

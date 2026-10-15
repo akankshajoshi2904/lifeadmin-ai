@@ -9,19 +9,51 @@ load_dotenv()
 VALID_INTENTS = {
     "create_task",
     "complete_task",
+    "reopen_task",
+    "update_task",
+    "delete_task",
     "upcoming_tasks",
     "review_tasks",
 }
 
 
 def detect_intent_with_rules(user_request: str) -> str:
-    """Detect intent using local rules without an API call."""
+    """Detect common task intents using local rules."""
     request = user_request.lower().strip()
 
     if not request:
         return "review_tasks"
 
-    # Detect task completion requests in different wordings.
+    # Deleting must be checked before creation or review.
+    if re.search(
+        r"\b(delete|remove|erase|discard)\b.*\b(task|reminder|todo|to-do)\b"
+        r"|\b(delete|remove|erase)\s+(?:it|that|this|the duplicate)\b",
+        request,
+    ):
+        return "delete_task"
+
+    # Reopening a completed task.
+    if re.search(
+        r"\b(reopen|uncomplete|undo completion|mark .+ as pending)\b",
+        request,
+    ) or (
+        re.search(r"\b(mark|set)\b", request)
+        and re.search(r"\b(pending|not done|incomplete)\b", request)
+    ):
+        return "reopen_task"
+
+    # Updating task details.
+    update_patterns = [
+        r"\b(update|edit|change|modify|rename|reschedule)\b",
+        r"\b(move|push|shift)\b.+\b(deadline|due date|date)\b",
+        r"\b(set|make)\b.+\b(priority|deadline|due date)\b",
+        r"\b(change|correct|fix)\b.+\b(task|deadline|priority|title)\b",
+    ]
+
+    if any(re.search(pattern, request) for pattern in update_patterns):
+        return "update_task"
+
+    # Completing a task.
     completion_patterns = [
         r"\bmark\b.+\bas\s+(?:completed|complete|done)\b",
         r"\bmark\b.+\b(?:completed|complete|done)\s*[.!?]*$",
@@ -29,22 +61,20 @@ def detect_intent_with_rules(user_request: str) -> str:
         r"\bfinish\s+(?:the\s+)?task\b",
         r"\btask\s+is\s+done\b",
         r"\bmark\s+task\s+as\s+done\b",
+        r"\b(i have|i've|i just)\s+(?:finished|completed|done)\b",
     ]
 
-    if any(
-        re.search(pattern, request)
-        for pattern in completion_patterns
-    ):
+    if any(re.search(pattern, request) for pattern in completion_patterns):
         return "complete_task"
 
-    # Detect adding an item to a to-do list before review rules.
+    # Adding items to a to-do list.
     if re.search(
         r"\b(add|put|include)\b.+\bto my (to-do|todo) list\b",
         request,
     ):
         return "create_task"
 
-    # Explicit and natural task-creation requests.
+    # Explicit task-creation requests.
     if any(
         phrase in request
         for phrase in [
@@ -69,6 +99,21 @@ def detect_intent_with_rules(user_request: str) -> str:
     ):
         return "create_task"
 
+    # Upcoming tasks and deadlines.
+    if any(
+        phrase in request
+        for phrase in [
+            "upcoming tasks",
+            "what is due",
+            "what's due",
+            "due soon",
+            "tasks due",
+            "deadlines coming up",
+            "what do i need to do next",
+        ]
+    ):
+        return "upcoming_tasks"
+
     # Review existing tasks.
     if any(
         phrase in request
@@ -88,22 +133,7 @@ def detect_intent_with_rules(user_request: str) -> str:
     ):
         return "review_tasks"
 
-    # Upcoming tasks and deadlines.
-    if any(
-        phrase in request
-        for phrase in [
-            "upcoming tasks",
-            "what is due",
-            "what's due",
-            "due soon",
-            "tasks due",
-            "deadlines coming up",
-            "what do i need to do next",
-        ]
-    ):
-        return "upcoming_tasks"
-
-    # Common actions expressed with a deadline.
+    # A deadline plus an action often means a new task.
     has_deadline = re.search(
         r"\b(by|before|on|tomorrow|tonight|today|next week|"
         r"next month|this weekend)\b",
@@ -130,7 +160,7 @@ def detect_intent(user_request: str) -> str:
 
     rule_intent = detect_intent_with_rules(user_request)
 
-    # Trust clear rule-based matches without requiring an API call.
+    # Use AI for requests that are not clearly classified by the rules.
     if rule_intent != "review_tasks":
         return rule_intent
 
@@ -142,13 +172,15 @@ def detect_intent(user_request: str) -> str:
 
         answer = ask_ai(
             "Classify the user's request into exactly one category: "
-            "create_task, complete_task, upcoming_tasks, review_tasks.\n"
-            "Use create_task when the user wants to create a task or "
-            "expresses an obligation.\n"
-            "Use complete_task when the user asks to mark an existing "
-            "task as completed or done, or asks to finish a task.\n"
-            "Use review_tasks when the user asks to see existing tasks.\n"
-            "Use upcoming_tasks when the user asks about upcoming deadlines.\n"
+            "create_task, complete_task, reopen_task, update_task, "
+            "delete_task, upcoming_tasks, review_tasks.\n"
+            "Use create_task for creating a new task.\n"
+            "Use complete_task for completing an existing task.\n"
+            "Use reopen_task for reopening a completed task.\n"
+            "Use update_task for changing existing task details.\n"
+            "Use delete_task for deleting an existing task.\n"
+            "Use upcoming_tasks for upcoming deadlines.\n"
+            "Use review_tasks for viewing or reviewing tasks.\n"
             "Return only the category name.\n\n"
             f"User request: {user_request}"
         )

@@ -2,33 +2,55 @@
 import re
 
 
-def extract_task_title(user_request: str) -> str:
-    """Extract a clean task title from a natural-language request."""
+DATE_PATTERN = (
+    r"\d{1,2}\s+"
+    r"(?:January|February|March|April|May|June|July|August|"
+    r"September|October|November|December)"
+    r"\s+\d{4}"
+)
 
+
+def extract_task_title(user_request: str) -> str:
+    """Extract a task title from common task-related requests."""
     request = user_request.strip()
+
     if not request:
         return ""
 
-    request_lower = request.lower()
+    # Prefer an explicitly quoted title.
+    quoted = re.search(r"""["']([^"']+)["']""", request)
+    if quoted:
+        return quoted.group(1).strip()
 
-    # Remove completion wording to identify the existing task's title.
-    completion_patterns = [
-        r"^mark\s+(.+?)\s+as\s+completed[.!]?$",
-        r"^mark\s+(.+?)\s+completed[.!]?$",
-        r"^mark\s+(.+?)\s+as\s+done[.!]?$",
-        r"^complete\s+(?:the\s+)?task\s+(.+?)[.!]?$",
-        r"^complete\s+(.+?)[.!]?$",
-        r"^finish\s+(?:the\s+)?task\s+(.+?)[.!]?$",
-        r"^finish\s+(.+?)[.!]?$",
+    patterns = [
+        r"^mark\s+(.+?)\s+as\s+(?:completed|complete|done|pending)[.!]?$",
+        r"^mark\s+(.+?)\s+(?:completed|complete|done)[.!]?$",
+        r"^(?:complete|finish|reopen|delete|remove)\s+"
+        r"(?:the\s+)?(?:task\s+)?(.+?)(?:\s+task)?[.!]?$",
+        r"^(?:update|edit|change|modify|rename|reschedule)\s+"
+        r"(?:the\s+)?(?:task\s+)?(.+?)[.!]?$",
+        r"^(?:task|assignment)\s+(?:named|called)\s+(.+?)[.!]?$",
     ]
 
-    for pattern in completion_patterns:
+    for pattern in patterns:
         match = re.match(pattern, request, flags=re.IGNORECASE)
         if match:
-            title = match.group(1).strip().strip("\"'")
-            return title.rstrip(".!?")
+            title = match.group(1).strip().strip("\"' ")
+            title = re.sub(
+                r"\s+priority\s+(?:to|as|is)\s+(?:low|medium|high)$",
+                "",
+                title,
+                flags=re.IGNORECASE,
+            )
+            title = re.sub(
+                r"\s+(?:to|for)\s+(?:low|medium|high)\s+priority$",
+                "",
+                title,
+                flags=re.IGNORECASE,
+            )
+            return title.rstrip(".!?").strip()
 
-    # Remove common task-creation prefixes.
+    # Creation prefixes
     prefixes = [
         "create a task called ",
         "create a task to ",
@@ -46,30 +68,31 @@ def extract_task_title(user_request: str) -> str:
         "make a task to ",
     ]
 
-    title = request
-
     for prefix in prefixes:
-        if request_lower.startswith(prefix):
-            title = request[len(prefix):].strip()
+        if request.lower().startswith(prefix):
+            request = request[len(prefix):].strip()
             break
 
-    # Remove quotation marks around the title, if present.
-    title = title.strip().strip("\"'")
-
-    # Remove a due-date phrase such as "by 25 October 2026".
-    date_pattern = (
-        r"\s+(?:by|before|on)\s+"
-        r"\d{1,2}\s+"
-        r"(?:January|February|March|April|May|June|July|August|"
-        r"September|October|November|December)"
-        r"\s+\d{4}"
-    )
-
-    title = re.sub(
-        date_pattern,
+    request = re.sub(
+        rf"\s+(?:by|before|on)\s+{DATE_PATTERN}\b",
         "",
-        title,
+        request,
         flags=re.IGNORECASE,
     )
 
-    return title.strip().rstrip(".!?")
+    return request.strip().strip("\"'").rstrip(".!?")
+
+
+def extract_requested_priority(user_request: str):
+    """Extract an explicitly requested priority, if present."""
+    match = re.search(
+        r"\b(low|medium|high)\s+priority\b"
+        r"|\bpriority\s+(?:to|as|is)\s+(low|medium|high)\b",
+        user_request,
+        flags=re.IGNORECASE,
+    )
+
+    if not match:
+        return None
+
+    return next(group for group in match.groups() if group).title()
