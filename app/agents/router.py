@@ -24,7 +24,32 @@ def detect_intent_with_rules(user_request: str) -> str:
     if not request:
         return "review_tasks"
 
-    # Deleting must be checked before creation or review.
+    # Explicit creation language takes priority over details such as priority.
+    creation_patterns = [
+        r"\bremind me to\b",
+        r"\bremind me about\b",
+        r"\bcreate\b.{0,40}\btask\b",
+        r"\badd\b.{0,40}\btask\b",
+        r"\bnew task\b",
+        r"\bmake a task\b",
+        r"\bmake a reminder\b",
+        r"\bset a reminder\b",
+        r"\bschedule a task\b",
+        r"\bdon't forget to\b",
+        r"\bneed to remember to\b",
+        r"\bremember to\b",
+        r"\bi need to\b",
+        r"\bi have to\b",
+        r"\bi must\b",
+        r"\bi should\b",
+        r"\badd\b.+\bto my (?:to-do|todo) list\b",
+        r"\bput\b.+\bto my (?:to-do|todo) list\b",
+    ]
+
+    if any(re.search(pattern, request) for pattern in creation_patterns):
+        return "create_task"
+
+    # Deleting an existing task.
     if re.search(
         r"\b(delete|remove|erase|discard)\b.*\b(task|reminder|todo|to-do)\b"
         r"|\b(delete|remove|erase)\s+(?:it|that|this|the duplicate)\b",
@@ -42,18 +67,7 @@ def detect_intent_with_rules(user_request: str) -> str:
     ):
         return "reopen_task"
 
-    # Updating task details.
-    update_patterns = [
-        r"\b(update|edit|change|modify|rename|reschedule)\b",
-        r"\b(move|push|shift)\b.+\b(deadline|due date|date)\b",
-        r"\b(set|make)\b.+\b(priority|deadline|due date)\b",
-        r"\b(change|correct|fix)\b.+\b(task|deadline|priority|title)\b",
-    ]
-
-    if any(re.search(pattern, request) for pattern in update_patterns):
-        return "update_task"
-
-    # Completing a task.
+    # Completing an existing task.
     completion_patterns = [
         r"\bmark\b.+\bas\s+(?:completed|complete|done)\b",
         r"\bmark\b.+\b(?:completed|complete|done)\s*[.!?]*$",
@@ -67,39 +81,18 @@ def detect_intent_with_rules(user_request: str) -> str:
     if any(re.search(pattern, request) for pattern in completion_patterns):
         return "complete_task"
 
-    # Adding items to a to-do list.
-    if re.search(
-        r"\b(add|put|include)\b.+\bto my (to-do|todo) list\b",
-        request,
-    ):
-        return "create_task"
+    # Updating existing task details.
+    update_patterns = [
+        r"\b(update|edit|change|modify|rename|reschedule)\b",
+        r"\b(move|push|shift)\b.+\b(deadline|due date|date)\b",
+        r"\b(set|make)\b.+\b(priority|deadline|due date)\b",
+        r"\b(change|correct|fix)\b.+\b(task|deadline|priority|title)\b",
+    ]
 
-    # Explicit task-creation requests.
-    if any(
-        phrase in request
-        for phrase in [
-            "create a task",
-            "create task",
-            "add a task",
-            "add task",
-            "new task",
-            "make a task",
-            "make a reminder",
-            "set a reminder",
-            "remind me",
-            "schedule a task",
-            "i need to",
-            "i have to",
-            "i must",
-            "i should",
-            "don't forget to",
-            "need to remember to",
-            "remember to",
-        ]
-    ):
-        return "create_task"
+    if any(re.search(pattern, request) for pattern in update_patterns):
+        return "update_task"
 
-    # Upcoming tasks and deadlines.
+    # Upcoming deadlines.
     if any(
         phrase in request
         for phrase in [
@@ -114,7 +107,7 @@ def detect_intent_with_rules(user_request: str) -> str:
     ):
         return "upcoming_tasks"
 
-    # Review existing tasks.
+    # Viewing existing tasks.
     if any(
         phrase in request
         for phrase in [
@@ -133,10 +126,10 @@ def detect_intent_with_rules(user_request: str) -> str:
     ):
         return "review_tasks"
 
-    # A deadline plus an action often means a new task.
+    # Natural-language task requests with a deadline and action.
     has_deadline = re.search(
-        r"\b(by|before|on|tomorrow|tonight|today|next week|"
-        r"next month|this weekend)\b",
+        r"\b(today|tomorrow|tonight|next week|next month|"
+        r"this weekend|by|before|on)\b",
         request,
     )
 
@@ -147,7 +140,9 @@ def detect_intent_with_rules(user_request: str) -> str:
         "register", "apply", "meet", "do", "file",
     }
 
-    if has_deadline and action_verbs.intersection(request.split()):
+    words = set(re.findall(r"[a-z']+", request))
+
+    if has_deadline and action_verbs.intersection(words):
         return "create_task"
 
     return "review_tasks"
@@ -160,7 +155,7 @@ def detect_intent(user_request: str) -> str:
 
     rule_intent = detect_intent_with_rules(user_request)
 
-    # Use AI for requests that are not clearly classified by the rules.
+    # Trust clear rule matches. Use AI for requests that need interpretation.
     if rule_intent != "review_tasks":
         return rule_intent
 
@@ -174,13 +169,14 @@ def detect_intent(user_request: str) -> str:
             "Classify the user's request into exactly one category: "
             "create_task, complete_task, reopen_task, update_task, "
             "delete_task, upcoming_tasks, review_tasks.\n"
-            "Use create_task for creating a new task.\n"
-            "Use complete_task for completing an existing task.\n"
-            "Use reopen_task for reopening a completed task.\n"
-            "Use update_task for changing existing task details.\n"
-            "Use delete_task for deleting an existing task.\n"
-            "Use upcoming_tasks for upcoming deadlines.\n"
-            "Use review_tasks for viewing or reviewing tasks.\n"
+            "Creating a new reminder or task is create_task, even if the "
+            "same message specifies its date or priority.\n"
+            "Changing an existing task is update_task.\n"
+            "Completing an existing task is complete_task.\n"
+            "Reopening a completed task is reopen_task.\n"
+            "Deleting an existing task is delete_task.\n"
+            "Viewing upcoming deadlines is upcoming_tasks.\n"
+            "Viewing existing tasks is review_tasks.\n"
             "Return only the category name.\n\n"
             f"User request: {user_request}"
         )
