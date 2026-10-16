@@ -71,7 +71,9 @@ def prioritize_tasks_node(state: AgentState):
         key=lambda task: (
             task["status"] != "Pending",
             task["days_left"] is None,
-            task["days_left"] if task["days_left"] is not None else 999999,
+            task["days_left"]
+            if task["days_left"] is not None
+            else 999999,
             task["priority"] != "High",
         )
     )
@@ -129,10 +131,10 @@ def _extract_target_title(state: AgentState) -> str:
         request,
         re.IGNORECASE,
     )
+
     if named:
         return named.group(1).strip().strip("\"' ")
 
-    # The parser may return the full request if it cannot extract a title.
     return extract_task_title(request)
 
 
@@ -175,6 +177,7 @@ def _find_requested_task(state: AgentState):
     """
     Find a task using exact or unique meaningful-word matches.
 
+    For updates, prefer a unique Pending task over completed tasks.
     Never automatically choose between multiple plausible tasks.
     """
     raw_target = _extract_target_title(state).strip()
@@ -184,7 +187,6 @@ def _find_requested_task(state: AgentState):
 
     target = _normalize_title(raw_target)
 
-    # Remove generic reference words, not meaningful task words.
     generic_words = {
         "my", "the", "a", "an", "task", "tasks",
         "reminder", "reminders", "todo", "todos",
@@ -204,12 +206,23 @@ def _find_requested_task(state: AgentState):
             task for task in state.tasks
             if task.get("status") == "Pending"
         ]
+
     elif state.intent == "reopen_task":
         eligible = [
             task for task in state.tasks
             if task.get("status") == "Completed"
         ]
+
+    elif state.intent == "update_task":
+        # First look for a match among active tasks.
+        pending_tasks = [
+            task for task in state.tasks
+            if task.get("status") == "Pending"
+        ]
+        eligible = pending_tasks if pending_tasks else list(state.tasks)
+
     else:
+        # Preserve existing matching behavior for delete and other actions.
         eligible = list(state.tasks)
 
     normalized_titles = {
@@ -229,9 +242,7 @@ def _find_requested_task(state: AgentState):
     if len(exact_matches) > 1:
         return None, exact_matches
 
-    # A unique task containing all meaningful reference words is a
-    # reasonable match. For example, "my gym task" matches
-    # "go to the gym tomorrow" when that is the only gym task.
+    # Match when all meaningful reference words occur in the title.
     all_word_matches = [
         task for task in eligible
         if target_words.issubset(
@@ -245,8 +256,7 @@ def _find_requested_task(state: AgentState):
     if len(all_word_matches) > 1:
         return None, all_word_matches
 
-    # If there is no all-word match, return likely candidates for
-    # clarification rather than guessing.
+    # Suggest likely candidates for clarification; never guess.
     partial_matches = [
         task for task in eligible
         if target in normalized_titles[id(task)]
