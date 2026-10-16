@@ -79,11 +79,17 @@ defaults = {
     "document_name": None,
     "document_text": None,
     "navigation_page": "Overview",
+    "pending_navigation": None,
 }
 
 for key, value in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
+
+# Apply navigation before the radio widget is created.
+pending_page = st.session_state.pop("pending_navigation", None)
+if pending_page in ["Overview", "AI Assistant", "Documents", "My Tasks"]:
+    st.session_state["navigation_page"] = pending_page
 
 # -------------------- Styling --------------------
 
@@ -402,7 +408,7 @@ if page == "Overview":
                 type="primary",
                 use_container_width=True,
             ):
-                st.session_state.navigation_page = "AI Assistant"
+                st.session_state.pending_navigation = "AI Assistant"
                 st.rerun()
 
     with c2:
@@ -418,7 +424,7 @@ if page == "Overview":
                 key="overview_documents",
                 use_container_width=True,
             ):
-                st.session_state.navigation_page = "Documents"
+                st.session_state.pending_navigation = "Documents"
                 st.rerun()
 
     st.write("")
