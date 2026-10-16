@@ -10,7 +10,7 @@ DATE_PATTERN = (
 )
 
 RELATIVE_DATE_PATTERN = (
-    r"(?:today|tomorrow|tonight|"
+    r"(?:day after tomorrow|today|tomorrow|tonight|"
     r"this evening|this afternoon|this morning|"
     r"next week|next month|this weekend|"
     r"next Monday|next Tuesday|next Wednesday|next Thursday|"
@@ -22,59 +22,64 @@ def extract_requested_priority(user_request: str):
     """Extract an explicitly requested priority."""
     request = user_request or ""
 
-    match = re.search(
-        r"\b(low|medium|high)\s+priority\b"
-        r"|\bpriority\s+(?:to|as|is)\s+(low|medium|high)\b"
-        r"|\b(?:make it|mark it|set it to)\s+"
-        r"(low|medium|high)\b"
-        r"|\b(?:urgent|urgently|asap|as soon as possible)\b",
-        request,
-        flags=re.IGNORECASE,
-    )
+    patterns = [
+        r"\bpriority\s+(?:to|as|is)\s+(low|medium|high)\b",
+        r"\b(?:low|medium|high)\s+priority\b",
+        r"\b(?:set|change|make|mark|update|lower|raise|"
+        r"increase|decrease)\b.{0,100}?\bto\s+(low|medium|high)\b",
+        r"\b(?:make it|mark it|set it to)\s+(low|medium|high)\b",
+        r"\b(urgent|urgently|asap|as soon as possible)\b",
+    ]
 
-    if not match:
-        return None
+    for pattern in patterns:
+        match = re.search(pattern, request, flags=re.IGNORECASE)
+        if not match:
+            continue
 
-    value = next((group for group in match.groups() if group), None)
+        value = next(
+            (group for group in match.groups() if group),
+            None,
+        )
 
-    if not value:
-        return "High"
+        if not value:
+            continue
 
-    value = value.lower()
+        value = value.lower()
 
-    if value == "urgent" or value == "urgently" or value in {
-        "asap",
-        "as soon as possible",
-    }:
-        return "High"
+        if value in {
+            "urgent",
+            "urgently",
+            "asap",
+            "as soon as possible",
+        }:
+            return "High"
 
-    return value.title()
+        return value.title()
+
+    return None
 
 
 def extract_task_title(user_request: str) -> str:
-    """Extract the task itself, excluding dates and task-management instructions."""
+    """Extract the task title, excluding dates and metadata instructions."""
     request = (user_request or "").strip()
 
     if not request:
         return ""
 
-    # Explicit quoted task titles take precedence.
+    # Explicit quoted titles take precedence.
     quoted = re.search(r"""["']([^"']+)["']""", request)
-
     if quoted:
         return quoted.group(1).strip()
 
-    # Keep only the first sentence when later sentences contain
-    # separate instructions, e.g. "Set the priority to High."
+    # Ignore a later sentence that only supplies metadata.
     request = re.split(
         r"(?<=[.!?])\s+(?=(?:set|change|make|mark|update|"
-        r"give|assign|raise|lower)\b)",
+        r"give|assign|raise|lower|increase|decrease)\b)",
         request,
         maxsplit=1,
         flags=re.IGNORECASE,
     )[0].strip()
 
-    # Remove common request prefixes.
     prefixes = [
         r"^(?:please\s+)?remind me to\s+",
         r"^(?:please\s+)?remind me about\s+",
@@ -103,34 +108,19 @@ def extract_task_title(user_request: str) -> str:
 
     for prefix in prefixes:
         request = re.sub(
-            prefix,
-            "",
-            request,
-            count=1,
-            flags=re.IGNORECASE,
+            prefix, "", request, count=1, flags=re.IGNORECASE
         )
-        if not request:
-            return ""
 
-    # Remove trailing instructions that describe task metadata.
+    # Remove trailing metadata instructions.
     request = re.sub(
-        r"\s+(?:and\s+)?(?:set|change|make|mark|update|give|assign|"
-        r"raise|lower)\s+(?:the\s+)?"
-        r"(?:priority|deadline|due date)\b.*$",
+        r"\s+(?:and\s+)?(?:set|change|make|mark|update|give|"
+        r"assign|raise|lower|increase|decrease)\s+"
+        r"(?:the\s+)?(?:priority|deadline|due date)\b.*$",
         "",
         request,
         flags=re.IGNORECASE,
     )
 
-    request = re.sub(
-        r"\s+(?:and\s+)?(?:make it|mark it)\s+"
-        r"(?:urgent|high priority|medium priority|low priority)\b.*$",
-        "",
-        request,
-        flags=re.IGNORECASE,
-    )
-
-    # Remove explicit priority phrases if they appear in the same sentence.
     request = re.sub(
         r"\s+(?:with\s+)?(?:low|medium|high)\s+priority\b",
         "",
@@ -146,14 +136,12 @@ def extract_task_title(user_request: str) -> str:
         flags=re.IGNORECASE,
     )
 
-    # Remove explicit calendar dates.
     request = re.sub(
         rf"\s+(?:by|before|on|due on|due by)\s+{DATE_PATTERN}\b",
         "",
         request,
         flags=re.IGNORECASE,
     )
-
     request = re.sub(
         rf"\s+{DATE_PATTERN}\b",
         "",
@@ -161,15 +149,13 @@ def extract_task_title(user_request: str) -> str:
         flags=re.IGNORECASE,
     )
 
-    # Remove relative dates from the title, while the date parser
-    # independently extracts the actual deadline.
     request = re.sub(
-        rf"\s+(?:by|before|on|due on|due by)\s+{RELATIVE_DATE_PATTERN}\b",
+        rf"\s+(?:by|before|on|due on|due by)\s+"
+        rf"{RELATIVE_DATE_PATTERN}\b",
         "",
         request,
         flags=re.IGNORECASE,
     )
-
     request = re.sub(
         rf"\s+{RELATIVE_DATE_PATTERN}\b",
         "",
@@ -177,8 +163,12 @@ def extract_task_title(user_request: str) -> str:
         flags=re.IGNORECASE,
     )
 
-    # Clean up common connecting words left by removing metadata.
     request = re.sub(r"\s+", " ", request).strip()
-    request = re.sub(r"^(?:to|for)\s+", "", request, flags=re.IGNORECASE)
+    request = re.sub(
+        r"^(?:to|for)\s+",
+        "",
+        request,
+        flags=re.IGNORECASE,
+    )
 
     return request.strip(" \t\r\n\"'.,;:!?-")
