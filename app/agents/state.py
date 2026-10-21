@@ -1,4 +1,3 @@
-
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -15,6 +14,12 @@ class AgentState:
     # Exact task selected for the requested action.
     selected_task_id: int | None = None
     selected_task: dict = field(default_factory=dict)
+
+    # Tasks offered to the user when clarification is required.
+    candidate_tasks: list = field(default_factory=list)
+
+    # The user's numbered selection, linked to the original request.
+    chosen_task_id: int | None = None
 
     # Only the fields the user wants to change.
     proposed_changes: dict = field(default_factory=dict)

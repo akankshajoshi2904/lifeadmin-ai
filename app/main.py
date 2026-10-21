@@ -1,12 +1,11 @@
 import sys
+import uuid
 from pathlib import Path
 from html import escape
 
 import streamlit as st
 
-# Ensure imports work locally and on Streamlit Community Cloud.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -29,48 +28,10 @@ st.set_page_config(
 
 create_tasks_table()
 
-# -------------------- Google Authentication --------------------
+# -------------------- Session state --------------------
 
-if not st.user.is_logged_in:
-    st.markdown(
-        """
-        <style>
-        .stApp {
-            background: #f6f7fb;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.title("LifeAdmin AI")
-    st.subheader("Your personal administration assistant")
-    st.write(
-        "Sign in with Google to manage your personal tasks "
-        "and documents."
-    )
-
-    st.button(
-        "Continue with Google",
-        type="primary",
-        use_container_width=True,
-        on_click=st.login,
-        args=("google",),
-    )
-
-    st.stop()
-
-# Google's stable account identifier.
-user_id = st.user.get("sub")
-
-if not user_id:
-    st.error(
-        "Google sign-in did not provide an account identifier. "
-        "Please sign out and sign in again."
-    )
-    st.stop()
-
-# -------------------- Session State --------------------
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
 
 defaults = {
     "prepared_request": None,
@@ -79,17 +40,14 @@ defaults = {
     "document_name": None,
     "document_text": None,
     "navigation_page": "Overview",
-    "pending_navigation": None,
+    "pending_selection": None,
 }
 
 for key, value in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-# Apply navigation before the radio widget is created.
-pending_page = st.session_state.pop("pending_navigation", None)
-if pending_page in ["Overview", "AI Assistant", "Documents", "My Tasks"]:
-    st.session_state["navigation_page"] = pending_page
+session_id = st.session_state.session_id
 
 # -------------------- Styling --------------------
 
@@ -100,15 +58,20 @@ st.markdown(
 
     html, body, [class*="css"] {
         font-family: 'DM Sans', sans-serif;
+        font-size: 16px;
     }
 
     .stApp {
         background: #f6f7fb;
     }
 
+    .block-container {
+        max-width: 1500px;
+        padding: 2rem 2.4rem;
+    }
+
     [data-testid="stSidebar"] {
         background: #111827;
-        border-right: 1px solid #273244;
     }
 
     [data-testid="stSidebar"] * {
@@ -116,11 +79,10 @@ st.markdown(
     }
 
     .brand {
-        font-size: 25px;
+        font-size: 28px;
         font-weight: 700;
-        letter-spacing: -1px;
-        color: #ffffff;
-        padding: 12px 0 2px 0;
+        color: white;
+        padding: 12px 0 4px;
     }
 
     .brand span {
@@ -128,125 +90,81 @@ st.markdown(
     }
 
     .sidebar-caption {
-        font-size: 12px;
+        font-size: 13px;
         color: #9ca3af !important;
-        margin-bottom: 24px;
+        margin-bottom: 26px;
     }
 
     .eyebrow {
         color: #6366f1;
         font-weight: 700;
-        font-size: 12px;
-        letter-spacing: 1.4px;
+        font-size: 13px;
+        letter-spacing: 1.5px;
         text-transform: uppercase;
     }
 
     .hero-title {
         color: #111827;
-        font-size: clamp(30px, 4vw, 42px);
+        font-size: clamp(34px, 3.2vw, 48px);
         font-weight: 700;
-        letter-spacing: -1.7px;
         line-height: 1.15;
-        margin: 8px 0;
+        margin: 10px 0 12px;
     }
 
     .hero-subtitle {
         color: #64748b;
-        font-size: 15px;
-        line-height: 1.7;
-        max-width: 700px;
+        font-size: 17px;
+        line-height: 1.75;
+        max-width: 820px;
     }
 
     .section-title {
         color: #111827;
-        font-size: 21px;
+        font-size: 25px;
         font-weight: 700;
-        letter-spacing: -0.5px;
-        margin-bottom: 3px;
+        margin-bottom: 5px;
     }
 
     .section-subtitle {
         color: #64748b;
-        font-size: 13px;
-        margin-bottom: 18px;
+        font-size: 16px;
+        margin-bottom: 22px;
     }
 
     div[data-testid="stMetric"] {
-        background: #ffffff;
+        background: white;
         border: 1px solid #e5e7eb;
-        padding: 18px 20px;
-        border-radius: 14px;
-        box-shadow: 0 3px 12px rgba(15, 23, 42, 0.025);
-    }
-
-    div[data-testid="stMetricLabel"] {
-        color: #64748b;
-    }
-
-    div[data-testid="stMetricValue"] {
-        color: #111827;
-        font-weight: 700;
+        padding: 22px;
+        border-radius: 16px;
     }
 
     div[data-testid="stForm"] {
-        background: #ffffff;
+        background: white;
         border: 1px solid #e5e7eb;
-        padding: 20px;
-        border-radius: 16px;
+        padding: 24px;
+        border-radius: 18px;
     }
 
     div.stButton > button,
     div[data-testid="stFormSubmitButton"] > button {
-        border-radius: 10px;
+        border-radius: 11px;
+        font-size: 15px;
         font-weight: 600;
-        min-height: 42px;
-        transition: all 0.15s ease;
-    }
-
-    div.stButton > button[kind="primary"],
-    div[data-testid="stFormSubmitButton"] > button[kind="primary"] {
-        background: #4f46e5;
-        border-color: #4f46e5;
-        color: #ffffff;
-    }
-
-    div.stButton > button:hover,
-    div[data-testid="stFormSubmitButton"] > button:hover {
-        border-color: #818cf8;
-    }
-
-    div[data-testid="stFileUploader"] {
-        background: #ffffff;
-        border: 1px dashed #c7d2fe;
-        border-radius: 14px;
-        padding: 12px;
-    }
-
-    .task-card {
-        background: #ffffff;
-        border: 1px solid #e5e7eb;
-        border-radius: 13px;
-        padding: 17px 18px;
-        margin: 8px 0;
+        min-height: 46px;
     }
 
     .task-name {
         color: #111827;
-        font-size: 15px;
+        font-size: 18px;
         font-weight: 700;
         overflow-wrap: anywhere;
     }
 
-    .muted {
-        color: #64748b;
-        font-size: 12px;
-    }
-
     .footer {
         color: #94a3b8;
-        font-size: 12px;
+        font-size: 13px;
         text-align: center;
-        padding: 25px 0 10px 0;
+        padding: 32px 0 12px;
     }
 
     #MainMenu, footer {
@@ -264,33 +182,23 @@ with st.sidebar:
         '<div class="brand">LifeAdmin<span>.</span></div>',
         unsafe_allow_html=True,
     )
-
     st.markdown(
-        '<div class="sidebar-caption">'
-        'YOUR PERSONAL ADMIN ASSISTANT'
-        '</div>',
+        '<div class="sidebar-caption">YOUR PERSONAL ADMIN ASSISTANT</div>',
         unsafe_allow_html=True,
     )
-
-    st.caption(f"Signed in as: {st.user.get('email', 'Google user')}")
-
-    if st.button("Sign out", use_container_width=True):
-        st.logout()
 
     page = st.radio(
         "NAVIGATION",
         ["Overview", "AI Assistant", "Documents", "My Tasks"],
         key="navigation_page",
-        label_visibility="visible",
     )
 
     st.divider()
     st.caption("Less admin. More time for what matters.")
 
-# -------------------- Shared Data --------------------
+# -------------------- Shared data --------------------
 
-# Each user's tasks are identified by their Google account ID.
-tasks = get_tasks(session_id=user_id)
+tasks = get_tasks(session_id=session_id)
 
 pending_tasks = [
     task for task in tasks
@@ -301,8 +209,6 @@ completed_tasks = [
     task for task in tasks
     if str(task[4]).lower() == "completed"
 ]
-
-# -------------------- Header --------------------
 
 st.markdown(
     '<div class="eyebrow">YOUR DAY, SIMPLIFIED</div>',
@@ -315,10 +221,8 @@ if page == "Overview":
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="hero-subtitle">'
-        'Keep track of important tasks, understand your documents, '
-        'and let your assistant prepare actions for your approval.'
-        '</div>',
+        '<div class="hero-subtitle">Keep track of tasks, understand '
+        'your documents, and prepare actions for your approval.</div>',
         unsafe_allow_html=True,
     )
 
@@ -328,10 +232,8 @@ elif page == "AI Assistant":
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="hero-subtitle">'
-        'Tell LifeAdmin what you need. Review its plan before '
-        'any action that requires your approval.'
-        '</div>',
+        '<div class="hero-subtitle">Tell LifeAdmin what you need. '
+        'Review its plan before any action.</div>',
         unsafe_allow_html=True,
     )
 
@@ -340,23 +242,10 @@ elif page == "Documents":
         '<div class="hero-title">Your documents, understood.</div>',
         unsafe_allow_html=True,
     )
-    st.markdown(
-        '<div class="hero-subtitle">'
-        'Extract useful dates and actions from a PDF without '
-        'reading the entire document again.'
-        '</div>',
-        unsafe_allow_html=True,
-    )
 
 else:
     st.markdown(
         '<div class="hero-title">Everything on your plate.</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="hero-subtitle">'
-        'A clear view of saved tasks, deadlines, priorities, and status.'
-        '</div>',
         unsafe_allow_html=True,
     )
 
@@ -366,72 +255,37 @@ st.write("")
 
 if page == "Overview":
     c1, c2, c3 = st.columns(3)
-
-    with c1:
-        st.metric("Tasks to do", len(pending_tasks))
-
-    with c2:
-        st.metric("Completed", len(completed_tasks))
-
-    with c3:
-        st.metric(
-            "Documents analyzed",
-            1 if st.session_state.document_analysis else 0,
-        )
+    c1.metric("Tasks to do", len(pending_tasks))
+    c2.metric("Completed", len(completed_tasks))
+    c3.metric(
+        "Documents analyzed",
+        1 if st.session_state.document_analysis else 0,
+    )
 
     st.write("")
-
-    st.markdown(
-        '<div class="section-title">Where would you like to start?</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="section-subtitle">'
-        'Choose what you need. You can come back here anytime.'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown("### Where would you like to start?")
 
     c1, c2 = st.columns(2)
 
     with c1:
         with st.container(border=True):
             st.subheader("AI Assistant")
-            st.write(
-                "Create a task, review your workload, or prepare "
-                "an action with human approval."
-            )
-
-            if st.button(
-                "Open assistant",
-                key="overview_assistant",
-                type="primary",
-                use_container_width=True,
-            ):
-                st.session_state.pending_navigation = "AI Assistant"
+            st.write("Create, update, complete, or delete tasks.")
+            if st.button("Open assistant", type="primary",
+                         use_container_width=True):
+                st.session_state.navigation_page = "AI Assistant"
                 st.rerun()
 
     with c2:
         with st.container(border=True):
             st.subheader("Document Intelligence")
-            st.write(
-                "Upload a PDF to find important dates, required "
-                "actions, and priority."
-            )
-
-            if st.button(
-                "Analyze a document",
-                key="overview_documents",
-                use_container_width=True,
-            ):
-                st.session_state.pending_navigation = "Documents"
+            st.write("Find dates and actions in a PDF.")
+            if st.button("Analyze a document",
+                         use_container_width=True):
+                st.session_state.navigation_page = "Documents"
                 st.rerun()
 
-    st.write("")
-    st.markdown(
-        '<div class="section-title">Your next tasks</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown("### Your next tasks")
 
     if pending_tasks:
         for task in pending_tasks[:4]:
@@ -440,7 +294,6 @@ if page == "Overview":
                     f'<div class="task-name">{escape(str(task[1]))}</div>',
                     unsafe_allow_html=True,
                 )
-
                 a, b, c = st.columns(3)
                 a.caption(f"Due: {task[2] or 'Not set'}")
                 b.caption(f"Priority: {task[3] or 'Medium'}")
@@ -451,98 +304,149 @@ if page == "Overview":
 # -------------------- AI Assistant --------------------
 
 elif page == "AI Assistant":
-    st.markdown(
-        '<div class="section-title">What can I help you with?</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="section-subtitle">'
-        'Use everyday language. For example: "Remind me to submit '
-        'my project report by 20 October 2026."'
-        '</div>',
-        unsafe_allow_html=True,
+    st.markdown("### What can I help you with?")
+
+    pending_selection = st.session_state.pending_selection
+    candidates = (
+        pending_selection.get("candidate_tasks", [])
+        if pending_selection else []
     )
 
     with st.form("agent_request_form", clear_on_submit=False):
-        user_request = st.text_area(
-            "Your request",
-            placeholder=(
-                "Tell me what you need to do, finish, or keep track of..."
-            ),
-            height=100,
-        )
+        if pending_selection and candidates:
+            st.info(
+                "The assistant needs you to identify a task. "
+                "Enter its number below. Your original request "
+                "will be preserved."
+            )
 
-        run_agent = st.form_submit_button(
-            "Prepare my request",
+            for index, task in enumerate(candidates, start=1):
+                st.write(
+                    f"**{index}.** {task.get('title', 'Untitled task')} "
+                    f"— {task.get('status', 'Unknown')} "
+                    f"(ID {task.get('id')})"
+                )
+
+            task_number = st.text_input(
+                "Your answer (enter the task number)",
+                placeholder="For example: 2",
+            )
+            user_request = ""
+        else:
+            user_request = st.text_area(
+                "Your request",
+                placeholder=(
+                    "For example: Delete my gym task, change its priority, "
+                    "or remind me to submit my report."
+                ),
+                height=110,
+            )
+            task_number = ""
+
+        submitted = st.form_submit_button(
+            "Continue" if pending_selection else "Prepare my request",
             type="primary",
             use_container_width=True,
         )
 
-    if run_agent:
-        if not user_request.strip():
-            st.warning("Please enter a request first.")
-        else:
-            try:
+    if submitted:
+        try:
+            if pending_selection and candidates:
+                if not task_number.strip().isdigit():
+                    st.error("Enter a valid task number, such as 1 or 2.")
+                else:
+                    choice = int(task_number.strip())
+
+                    if choice < 1 or choice > len(candidates):
+                        st.error(
+                            f"Choose a number between 1 and {len(candidates)}."
+                        )
+                    else:
+                        selected_candidate = candidates[choice - 1]
+                        original_request = pending_selection["original_request"]
+
+                        with st.spinner("Preparing the selected task..."):
+                            result = prepare_request(
+                                original_request,
+                                session_id=session_id,
+                                chosen_task_id=int(selected_candidate["id"]),
+                            )
+
+                        st.session_state.prepared_request = result
+                        st.session_state.agent_result = None
+
+                        if result.get("clarification_required"):
+                            new_candidates = result.get("candidate_tasks", [])
+                            st.session_state.pending_selection = {
+                                "original_request": original_request,
+                                "candidate_tasks": new_candidates,
+                            }
+                        else:
+                            st.session_state.pending_selection = None
+
+                        st.rerun()
+
+            elif not user_request.strip():
+                st.warning("Please enter a request first.")
+
+            else:
                 with st.spinner("Understanding your request..."):
                     result = prepare_request(
                         user_request.strip(),
-                        session_id=user_id,
+                        session_id=session_id,
                     )
 
                 st.session_state.prepared_request = result
                 st.session_state.agent_result = None
 
-            except Exception as exc:
-                st.error(
-                    f"The assistant couldn't prepare this request: {exc}"
-                )
+                if (
+                    result.get("clarification_required")
+                    and result.get("candidate_tasks")
+                ):
+                    st.session_state.pending_selection = {
+                        "original_request": user_request.strip(),
+                        "candidate_tasks": result["candidate_tasks"],
+                    }
+                else:
+                    st.session_state.pending_selection = None
+
+                st.rerun()
+
+        except Exception as exc:
+            st.error(f"The assistant couldn't prepare this request: {exc}")
 
     result = st.session_state.prepared_request
 
     if result:
-        # Prevent a prepared action from another account being used.
-        if result.get("session_id") != user_id:
+        if result.get("session_id") != session_id:
             st.session_state.prepared_request = None
-            st.session_state.agent_result = None
-            st.warning(
-                "This request belongs to another account or an earlier "
-                "session. Please prepare your request again."
-            )
+            st.session_state.pending_selection = None
+            st.warning("Session mismatch. Please prepare your request again.")
             st.stop()
 
         st.write("")
-        st.markdown(
-            '<div class="section-title">Review your plan</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown("### Review your plan")
 
         c1, c2, c3 = st.columns(3)
-
         c1.metric(
             "Request type",
             str(result.get("intent", "Unknown")).replace("_", " ").title(),
         )
-
         c2.metric(
             "Approval needed",
             "Yes" if result.get("approval_required") else "No",
         )
-
         c3.metric(
             "Status",
-            (
-                "Approved"
-                if result.get("approved")
-                else "Awaiting review"
-                if result.get("approval_required")
-                else "Ready"
-            ),
+            "Awaiting review" if result.get("approval_required")
+            else "Needs clarification" if result.get("clarification_required")
+            else "Ready",
         )
 
         with st.container(border=True):
             st.subheader("Proposed action")
-            plan = result.get("plan") or []
 
+            plan = result.get("plan") or []
             if plan:
                 for index, step in enumerate(plan, start=1):
                     st.markdown(f"**{index}.** {step}")
@@ -553,9 +457,8 @@ elif page == "AI Assistant":
             st.write(result.get("response", "No response available."))
 
         if result.get("approval_required"):
-            st.write("")
             st.warning(
-                "Nothing will be changed until you approve the proposed action."
+                "Nothing will change until you approve the proposed action."
             )
 
             c1, c2 = st.columns(2)
@@ -568,24 +471,20 @@ elif page == "AI Assistant":
                     key="approve_agent_action",
                 ):
                     try:
-                        if result.get("session_id") != user_id:
-                            st.error(
-                                "Account mismatch. Please prepare the request again."
-                            )
+                        if result.get("session_id") != st.session_state.session_id:
+                            st.error("Session mismatch. Prepare the request again.")
                             st.stop()
 
                         approved_state = approve_request(result)
-
                         executed_state = execute_approved_request(
                             approved_state.__dict__
                         )
 
                         st.session_state.agent_result = executed_state
-                        st.session_state.prepared_request = (
-                            executed_state.__dict__
-                        )
+                        st.session_state.prepared_request = executed_state.__dict__
+                        st.session_state.pending_selection = None
 
-                        st.success("The approval workflow finished.")
+                        st.success(executed_state.response)
                         st.rerun()
 
                     except Exception as exc:
@@ -599,15 +498,10 @@ elif page == "AI Assistant":
                 ):
                     try:
                         rejected_state = reject_request(result)
-
                         st.session_state.agent_result = rejected_state
-                        st.session_state.prepared_request = (
-                            rejected_state.__dict__
-                        )
-
-                        st.info(
-                            "Action rejected. No approved action was executed."
-                        )
+                        st.session_state.prepared_request = rejected_state.__dict__
+                        st.session_state.pending_selection = None
+                        st.info("Action rejected. No changes were made.")
                         st.rerun()
 
                     except Exception as exc:
@@ -619,40 +513,23 @@ elif page == "AI Assistant":
 # -------------------- Documents --------------------
 
 elif page == "Documents":
-    st.markdown(
-        '<div class="section-title">Analyze a PDF</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="section-subtitle">'
-        'Your file is processed by this application. Only PDF files are accepted.'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown("### Analyze a PDF")
 
     uploaded_file = st.file_uploader(
         "Choose a PDF document",
         type=["pdf"],
-        help="Select a PDF that contains dates, actions, or obligations.",
     )
 
     if uploaded_file is not None:
-        if st.button(
-            "Analyze document",
-            type="primary",
-            use_container_width=True,
-        ):
+        if st.button("Analyze document", type="primary"):
             try:
                 with st.spinner("Reading your document..."):
                     text = extract_text_from_pdf(uploaded_file)
-
                     st.session_state.document_name = uploaded_file.name
                     st.session_state.document_text = text
 
                     if text and text.strip():
-                        st.session_state.document_analysis = analyze_document(
-                            text
-                        )
+                        st.session_state.document_analysis = analyze_document(text)
                     else:
                         st.session_state.document_analysis = None
 
@@ -660,19 +537,11 @@ elif page == "Documents":
                 st.error(f"Unable to analyze this PDF: {exc}")
 
     if st.session_state.document_name:
-        st.caption(
-            f"Last selected document: {st.session_state.document_name}"
-        )
+        st.caption(f"Last selected document: {st.session_state.document_name}")
 
     analysis = st.session_state.document_analysis
 
     if analysis:
-        st.write("")
-        st.markdown(
-            '<div class="section-title">Document findings</div>',
-            unsafe_allow_html=True,
-        )
-
         with st.container(border=True):
             st.markdown("**Document type**")
             st.write(analysis.get("document_type") or "Not identified")
@@ -684,44 +553,23 @@ elif page == "Documents":
             st.write(analysis.get("action_required") or "No action identified")
 
             st.markdown("**Priority**")
-            priority = analysis.get("priority") or "Not determined"
-
-            if priority == "High":
-                st.error(f"Priority: {priority}")
-            elif priority == "Medium":
-                st.warning(f"Priority: {priority}")
-            else:
-                st.info(f"Priority: {priority}")
-
-        if analysis.get("action_required"):
-            st.info(
-                "You can use the AI Assistant to prepare a task based on "
-                "these findings. Review the proposed task before approving it."
-            )
+            st.write(analysis.get("priority") or "Not determined")
 
         with st.expander("View extracted text"):
-            extracted = st.session_state.document_text or ""
-            st.text(extracted[:12000])
-
-            if len(extracted) > 12000:
-                st.caption("Showing the first 12,000 characters.")
+            st.text((st.session_state.document_text or "")[:12000])
 
     elif st.session_state.document_name:
         st.warning(
-            "No readable text was extracted. This may be a scanned PDF "
-            "that requires OCR, which is not currently configured."
+            "No readable text was extracted. Scanned PDFs may require OCR."
         )
 
 # -------------------- My Tasks --------------------
 
 elif page == "My Tasks":
     c1, c2, c3 = st.columns(3)
-
     c1.metric("Total tasks", len(tasks))
     c2.metric("Pending", len(pending_tasks))
     c3.metric("Completed", len(completed_tasks))
-
-    st.write("")
 
     filter_status = st.selectbox(
         "Show tasks",
@@ -758,8 +606,6 @@ elif page == "My Tasks":
 # -------------------- Footer --------------------
 
 st.markdown(
-    '<div class="footer">'
-    'LifeAdmin AI · Personal administration, made simpler.'
-    '</div>',
+    '<div class="footer">LifeAdmin AI · Personal administration, made simpler.</div>',
     unsafe_allow_html=True,
 )

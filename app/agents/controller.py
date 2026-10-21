@@ -1,4 +1,6 @@
 
+import uuid
+
 from app.agents.approval import approve_action, reject_action
 from app.agents.state import AgentState
 from app.tools.task_tools import (
@@ -10,11 +12,22 @@ from app.tools.task_tools import (
 )
 
 
-def prepare_request(user_request: str, session_id: str):
-    """Prepare a request for the current user's session."""
+def prepare_request(
+    user_request: str,
+    session_id: str | None = None,
+    chosen_task_id: int | None = None,
+):
+    """Prepare a request with a valid session and optional chosen task."""
+    if session_id is None:
+        session_id = f"test-{uuid.uuid4()}"
+
+    if not isinstance(session_id, str) or not session_id.strip():
+        raise ValueError("A valid session ID is required.")
+
     state = AgentState(
         user_request=user_request,
         session_id=session_id,
+        chosen_task_id=chosen_task_id,
         approved=False,
     )
 
@@ -24,8 +37,10 @@ def prepare_request(user_request: str, session_id: str):
 
 
 def approve_request(state):
-    """Approve only an action that was prepared for approval."""
-    agent_state = AgentState(**state)
+    """Approve only an action prepared for approval."""
+    agent_state = (
+        AgentState(**state) if isinstance(state, dict) else state
+    )
 
     if not agent_state.approval_required:
         raise ValueError("There is no pending action to approve.")
@@ -45,14 +60,18 @@ def approve_request(state):
 
 
 def reject_request(state):
-    """Reject the prepared action without modifying any task."""
-    agent_state = AgentState(**state)
+    """Reject the prepared action without modifying a task."""
+    agent_state = (
+        AgentState(**state) if isinstance(state, dict) else state
+    )
     return reject_action(agent_state)
 
 
 def execute_approved_request(state):
-    """Execute the exact approved action without rerunning task selection."""
-    agent_state = AgentState(**state)
+    """Execute exactly the action and task that received approval."""
+    agent_state = (
+        AgentState(**state) if isinstance(state, dict) else state
+    )
 
     if not agent_state.approved or not agent_state.approval_required:
         raise ValueError("The action has not been approved.")
@@ -65,7 +84,7 @@ def execute_approved_request(state):
     changes = agent_state.proposed_changes or {}
     intent = agent_state.intent
 
-    if not session_id:
+    if not isinstance(session_id, str) or not session_id.strip():
         raise ValueError("The session ID is missing.")
 
     if intent == "create_task":
@@ -111,8 +130,6 @@ def execute_approved_request(state):
         if not changes:
             raise ValueError("No task changes were provided.")
 
-        # A missing due_date key means leave the date unchanged.
-        # A null due_date explicitly clears it.
         if changes.get("clear_due_date"):
             updated = update_task_tool(
                 task_id=task_id,

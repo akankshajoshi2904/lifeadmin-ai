@@ -7,44 +7,10 @@ from app.agents.workflow import lifeadmin_agent
 
 
 class TestLifeAdminWorkflow(unittest.TestCase):
+    def setUp(self):
+        self.session_id = "workflow-test-session"
 
-    def test_workflow_detects_complete_task_intent(self):
-        state = AgentState(
-            user_request="Complete my next task.",
-            approved=False,
-        )
-
-        result = lifeadmin_agent.invoke(state)
-
-        self.assertEqual(result["intent"], "complete_task")
-
-    def test_workflow_requires_approval(self):
-        state = AgentState(
-            user_request="Complete my next task.",
-            approved=False,
-        )
-
-        result = lifeadmin_agent.invoke(state)
-
-        self.assertTrue(result["approval_required"])
-        self.assertFalse(result["approved"])
-
-    def test_workflow_returns_plan_and_response(self):
-        state = AgentState(
-            user_request="Complete my next task.",
-            approved=False,
-        )
-
-        result = lifeadmin_agent.invoke(state)
-
-        self.assertIsInstance(result["plan"], list)
-        self.assertIsInstance(result["tasks"], list)
-        self.assertIsInstance(result["response"], str)
-        self.assertTrue(result["response"])
-
-    @patch("app.agents.workflow.get_memory")
-    def test_named_task_is_selected(self, mock_get_memory):
-        mock_get_memory.return_value = [
+        self.tasks = [
             {
                 "id": 9,
                 "title": "test LifeAdmin AI",
@@ -61,18 +27,76 @@ class TestLifeAdminWorkflow(unittest.TestCase):
             },
         ]
 
+        self.memory_patcher = patch(
+            "app.agents.workflow.get_memory",
+            return_value=self.tasks,
+        )
+        self.mock_get_memory = self.memory_patcher.start()
+        self.addCleanup(self.memory_patcher.stop)
+
+    def run_request(self, request):
         state = AgentState(
-            user_request="Complete my task named test LifeAdmin AI.",
+            user_request=request,
+            session_id=self.session_id,
             approved=False,
         )
+        return lifeadmin_agent.invoke(state)
 
-        result = lifeadmin_agent.invoke(state)
+    def test_workflow_detects_complete_task_intent(self):
+        result = self.run_request(
+            "Complete my task named test LifeAdmin AI."
+        )
 
         self.assertEqual(result["intent"], "complete_task")
-        self.assertEqual(result["plan"], ["test LifeAdmin AI"])
+
+    def test_workflow_requires_approval(self):
+        result = self.run_request(
+            "Complete my task named test LifeAdmin AI."
+        )
+
         self.assertTrue(result["approval_required"])
         self.assertFalse(result["approved"])
-        self.assertIn("test LifeAdmin AI", result["response"])
+        self.assertEqual(result["selected_task_id"], 9)
+
+    def test_workflow_returns_plan_and_response(self):
+        result = self.run_request(
+            "Complete my task named test LifeAdmin AI."
+        )
+
+        self.assertIsInstance(result["plan"], list)
+        self.assertIsInstance(result["tasks"], list)
+        self.assertIsInstance(result["response"], str)
+        self.assertTrue(result["response"])
+        self.assertEqual(result["plan"], ["Complete: test LifeAdmin AI"])
+
+    def test_named_task_is_selected(self):
+        result = self.run_request(
+            "Complete my task named test LifeAdmin AI."
+        )
+
+        self.assertEqual(result["intent"], "complete_task")
+        self.assertEqual(result["selected_task_id"], 9)
+        self.assertEqual(result["plan"], ["Complete: test LifeAdmin AI"])
+        self.assertTrue(result["approval_required"])
+        self.assertFalse(result["approved"])
+        self.assertIn("test LifeAdmin AI", result["selected_task"]["title"])
+
+    def test_ambiguous_task_requires_clarification(self):
+        self.tasks.append(
+            {
+                "id": 10,
+                "title": "test LifeAdmin AI backup",
+                "due_date": None,
+                "priority": "Low",
+                "status": "Pending",
+            }
+        )
+
+        result = self.run_request("Complete my test LifeAdmin AI task.")
+
+        self.assertTrue(result["clarification_required"])
+        self.assertFalse(result["approval_required"])
+        self.assertIsNone(result["selected_task_id"])
 
 
 if __name__ == "__main__":

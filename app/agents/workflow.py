@@ -1,4 +1,3 @@
-
 import re
 from datetime import datetime
 
@@ -74,7 +73,7 @@ def prioritize_tasks_node(state: AgentState):
             task["days_left"]
             if task["days_left"] is not None
             else 999999,
-            task["priority"] != "High",
+            task.get("priority") != "High",
         )
     )
 
@@ -84,47 +83,12 @@ def prioritize_tasks_node(state: AgentState):
 
 
 def _extract_target_title(state: AgentState) -> str:
-    """Extract the target task from common action requests."""
+    """Extract the task reference from common action requests."""
     request = state.user_request.strip()
 
-    patterns = [
-        # Change the priority of my gym task to Low.
-        r"^(?:please\s+)?(?:change|set|update|edit|modify)\s+"
-        r"(?:the\s+)?priority\s+(?:of\s+)?(.+?)\s+"
-        r"(?:to|as|is)\s+(?:low|medium|high)"
-        r"(?:\s+priority)?[.!]?$",
-
-        # Change my gym task priority to Low.
-        r"^(?:please\s+)?(?:change|set|update|edit|modify)\s+"
-        r"(.+?)\s+priority\s+(?:to|as|is)\s+"
-        r"(?:low|medium|high)(?:\s+priority)?[.!]?$",
-
-        # Change the deadline of my gym task to 20 October 2026.
-        r"^(?:please\s+)?(?:change|set|update|edit|modify)\s+"
-        r"(?:the\s+)?(?:deadline|due date)\s+(?:of|for)\s+"
-        r"(.+?)\s+(?:to|as)\s+\d{1,2}\s+"
-        r"[A-Za-z]+\s+\d{4}[.!]?$",
-
-        r"^(?:please\s+)?(?:change|set|update|edit|modify)\s+"
-        r"(.+?)\s+(?:deadline|due date)\s+(?:to|as)\s+"
-        r"\d{1,2}\s+[A-Za-z]+\s+\d{4}[.!]?$",
-
-        r"^(?:please\s+)?rename\s+(.+?)\s+to\s+.+[.!]?$",
-        r"^(?:please\s+)?change\s+(?:the\s+)?title\s+of\s+"
-        r"(.+?)\s+to\s+.+[.!]?$",
-
-        # Complete, reopen, or delete a named task.
-        r"^(?:please\s+)?(?:complete|finish|reopen|delete|remove)"
-        r"\s+(?:the\s+)?(.+?)[.!]?$",
-        r"^(?:please\s+)?mark\s+(.+?)\s+as\s+"
-        r"(?:completed|complete|done|pending)[.!]?$",
-    ]
-
-    for pattern in patterns:
-        match = re.match(pattern, request, re.IGNORECASE)
-        if match:
-            return match.group(1).strip().strip("\"' ")
-
+    # FIX: Extract explicitly named tasks before broad action patterns.
+    # Example: "Complete my task named test LifeAdmin AI."
+    # Correct result: "test LifeAdmin AI"
     named = re.search(
         r"\b(?:task|assignment|reminder)\s+"
         r"(?:named|called)\s+(.+?)[.!]?$",
@@ -135,11 +99,47 @@ def _extract_target_title(state: AgentState) -> str:
     if named:
         return named.group(1).strip().strip("\"' ")
 
+    patterns = [
+        r"^(?:please\s+)?(?:change|set|update|edit|modify)\s+"
+        r"(?:the\s+)?priority\s+(?:of\s+)?(.+?)\s+"
+        r"(?:to|as|is)\s+(?:low|medium|high)"
+        r"(?:\s+priority)?[.!]?$",
+
+        r"^(?:please\s+)?(?:change|set|update|edit|modify)\s+"
+        r"(.+?)\s+priority\s+(?:to|as|is)\s+"
+        r"(?:low|medium|high)(?:\s+priority)?[.!]?$",
+
+        r"^(?:please\s+)?(?:change|set|update|edit|modify)\s+"
+        r"(?:the\s+)?(?:deadline|due date)\s+(?:of|for)\s+"
+        r"(.+?)\s+(?:to|as)\s+\d{1,2}\s+"
+        r"[A-Za-z]+\s+\d{4}[.!]?$",
+
+        r"^(?:please\s+)?(?:change|set|update|edit|modify)\s+"
+        r"(.+?)\s+(?:deadline|due date)\s+(?:to|as)\s+"
+        r"\d{1,2}\s+[A-Za-z]+\s+\d{4}[.!]?$",
+
+        r"^(?:please\s+)?rename\s+(.+?)\s+to\s+.+[.!]?$",
+
+        r"^(?:please\s+)?change\s+(?:the\s+)?title\s+of\s+"
+        r"(.+?)\s+to\s+.+[.!]?$",
+
+        r"^(?:please\s+)?(?:complete|finish|reopen|delete|remove)"
+        r"\s+(?:the\s+)?(.+?)[.!]?$",
+
+        r"^(?:please\s+)?mark\s+(.+?)\s+as\s+"
+        r"(?:completed|complete|done|pending)[.!]?$",
+    ]
+
+    for pattern in patterns:
+        match = re.match(pattern, request, re.IGNORECASE)
+        if match:
+            return match.group(1).strip().strip("\"' ")
+
     return extract_task_title(request)
 
 
 def _extract_update_changes(state: AgentState) -> dict:
-    """Extract only changes explicitly requested by the user."""
+    """Extract only the changes explicitly requested."""
     request = state.user_request.strip()
     changes = {}
 
@@ -167,26 +167,44 @@ def _extract_update_changes(state: AgentState) -> dict:
 
 
 def _normalize_title(title: str) -> str:
-    """Normalize a title for case-insensitive natural-language matching."""
+    """Normalize titles for case-insensitive matching."""
     title = str(title or "").casefold()
     title = re.sub(r"[^a-z0-9\s]", " ", title)
     return re.sub(r"\s+", " ", title).strip()
 
 
-def _find_requested_task(state: AgentState):
-    """
-    Find a task using exact or unique meaningful-word matches.
+def _eligible_tasks(state: AgentState) -> list:
+    """Return tasks eligible for the requested action."""
+    if state.intent == "complete_task":
+        return [
+            task for task in state.tasks
+            if task.get("status") == "Pending"
+        ]
 
-    For updates, prefer a unique Pending task over completed tasks.
-    Never automatically choose between multiple plausible tasks.
-    """
+    if state.intent == "reopen_task":
+        return [
+            task for task in state.tasks
+            if task.get("status") == "Completed"
+        ]
+
+    if state.intent == "update_task":
+        pending = [
+            task for task in state.tasks
+            if task.get("status") == "Pending"
+        ]
+        return pending if pending else list(state.tasks)
+
+    return list(state.tasks)
+
+
+def _find_requested_task(state: AgentState):
+    """Find one clear match or return candidates for clarification."""
     raw_target = _extract_target_title(state).strip()
 
     if not raw_target:
         return None, []
 
     target = _normalize_title(raw_target)
-
     generic_words = {
         "my", "the", "a", "an", "task", "tasks",
         "reminder", "reminders", "todo", "todos",
@@ -201,36 +219,12 @@ def _find_requested_task(state: AgentState):
     if not target_words:
         return None, []
 
-    if state.intent == "complete_task":
-        eligible = [
-            task for task in state.tasks
-            if task.get("status") == "Pending"
-        ]
-
-    elif state.intent == "reopen_task":
-        eligible = [
-            task for task in state.tasks
-            if task.get("status") == "Completed"
-        ]
-
-    elif state.intent == "update_task":
-        # First look for a match among active tasks.
-        pending_tasks = [
-            task for task in state.tasks
-            if task.get("status") == "Pending"
-        ]
-        eligible = pending_tasks if pending_tasks else list(state.tasks)
-
-    else:
-        # Preserve existing matching behavior for delete and other actions.
-        eligible = list(state.tasks)
-
+    eligible = _eligible_tasks(state)
     normalized_titles = {
         id(task): _normalize_title(task.get("title", ""))
         for task in eligible
     }
 
-    # Exact title match.
     exact_matches = [
         task for task in eligible
         if normalized_titles[id(task)] == target
@@ -242,31 +236,47 @@ def _find_requested_task(state: AgentState):
     if len(exact_matches) > 1:
         return None, exact_matches
 
-    # Match when all meaningful reference words occur in the title.
-    all_word_matches = [
+    word_matches = [
         task for task in eligible
         if target_words.issubset(
             set(normalized_titles[id(task)].split())
         )
     ]
 
-    if len(all_word_matches) == 1:
-        return all_word_matches[0], []
+    if len(word_matches) == 1:
+        return word_matches[0], []
 
-    if len(all_word_matches) > 1:
-        return None, all_word_matches
+    if len(word_matches) > 1:
+        return None, word_matches
 
-    # Suggest likely candidates for clarification; never guess.
     partial_matches = [
         task for task in eligible
-        if target in normalized_titles[id(task)]
-        or normalized_titles[id(task)] in target
-        or target_words.intersection(
-            set(normalized_titles[id(task)].split())
+        if (
+            target in normalized_titles[id(task)]
+            or normalized_titles[id(task)] in target
+            or target_words.intersection(
+                set(normalized_titles[id(task)].split())
+            )
         )
     ]
 
     return None, partial_matches
+
+
+def _select_chosen_task(state: AgentState):
+    """Validate the user's numbered selection against current session tasks."""
+    eligible = _eligible_tasks(state)
+
+    for task in eligible:
+        try:
+            matches_id = int(task.get("id")) == int(state.chosen_task_id)
+        except (TypeError, ValueError):
+            matches_id = False
+
+        if matches_id:
+            return task
+
+    return None
 
 
 def plan_next_action_node(state: AgentState):
@@ -274,8 +284,10 @@ def plan_next_action_node(state: AgentState):
     state.selected_task_id = None
     state.selected_task = {}
     state.proposed_changes = {}
+    state.candidate_tasks = []
     state.clarification_required = False
     state.approval_required = False
+    state.approved = False
 
     if state.intent == "create_task":
         title = extract_task_title(state.user_request)
@@ -311,32 +323,54 @@ def plan_next_action_node(state: AgentState):
         "update_task",
         "delete_task",
     }:
-        selected, suggestions = _find_requested_task(state)
+        # Resolve a numbered choice against the current session's tasks.
+        if state.chosen_task_id is not None:
+            selected = _select_chosen_task(state)
+            suggestions = []
+
+            if selected is None:
+                state.clarification_required = True
+                state.current_step = "Clarification required"
+                state.response = (
+                    "That selection is no longer available or is not "
+                    "eligible for this action. Please choose from the "
+                    "current task options. No changes were made."
+                )
+                return state
+        else:
+            selected, suggestions = _find_requested_task(state)
 
         if selected is None:
             state.clarification_required = True
             state.current_step = "Clarification required"
+            state.candidate_tasks = [
+                dict(task) for task in suggestions[:5]
+            ]
 
-            if suggestions:
+            if state.candidate_tasks:
                 choices = "\n".join(
-                    f"- {task['title']} (ID {task['id']}, "
+                    f"{index}. {task.get('title', 'Untitled task')} "
+                    f"(ID {task.get('id')}, "
                     f"{task.get('status', 'Unknown')})"
-                    for task in suggestions[:5]
+                    for index, task in enumerate(
+                        state.candidate_tasks, start=1
+                    )
                 )
                 state.response = (
                     "I couldn't identify one exact task. "
-                    "Which task did you mean?\n" + choices
+                    "Reply with the number of the task you mean:\n"
+                    + choices
                 )
             else:
                 state.response = (
-                    "I couldn't find a matching task. "
-                    "Please describe the task or provide its title "
-                    "as shown in My Tasks. No changes were made."
+                    "I couldn't find a matching task. Please describe "
+                    "the task using its title from My Tasks. "
+                    "No changes were made."
                 )
 
             return state
 
-        state.selected_task_id = selected["id"]
+        state.selected_task_id = int(selected["id"])
         state.selected_task = dict(selected)
 
         if state.intent == "complete_task":
@@ -376,7 +410,7 @@ def plan_next_action_node(state: AgentState):
 
                 state.plan.append(
                     f"{field.replace('_', ' ').title()}: "
-                    f"{old_value} → {new_value}"
+                    f"{old_value} -> {new_value}"
                 )
 
         state.current_step = "Plan created"
@@ -387,7 +421,7 @@ def plan_next_action_node(state: AgentState):
 
 
 def prepare_execution_node(state: AgentState):
-    """Prepare mutations for approval; never approve them automatically."""
+    """Prepare mutations for approval; never execute them here."""
     if state.clarification_required:
         state.approval_required = False
         return state
@@ -398,7 +432,10 @@ def prepare_execution_node(state: AgentState):
         return state
 
     if state.intent in ACTION_INTENTS:
-        if state.intent != "create_task" and state.selected_task_id is None:
+        if (
+            state.intent != "create_task"
+            and state.selected_task_id is None
+        ):
             state.approval_required = False
             state.current_step = "No action available"
             return state
@@ -450,7 +487,9 @@ def summarize_tasks_node(state: AgentState):
     if state.intent == "upcoming_tasks":
         upcoming = [
             task for task in pending
-            if task.get("urgency") in {"Overdue", "Due Soon", "Upcoming"}
+            if task.get("urgency") in {
+                "Overdue", "Due Soon", "Upcoming"
+            }
         ]
 
         if not upcoming:
@@ -465,7 +504,6 @@ def summarize_tasks_node(state: AgentState):
             state.response = (
                 "Here are your upcoming tasks:\n" + "\n".join(lines)
             )
-
     else:
         if not pending:
             state.response = "You have no pending tasks."
