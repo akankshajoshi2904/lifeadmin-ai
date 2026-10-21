@@ -1,6 +1,5 @@
 
 import sys
-import uuid
 from pathlib import Path
 from html import escape
 
@@ -27,12 +26,34 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# -------------------- Google authentication --------------------
+
+if not st.user.is_logged_in:
+    st.title("Welcome to LifeAdmin AI")
+    st.write("Sign in with Google to securely access your personal tasks.")
+    st.button(
+        "Continue with Google",
+        on_click=st.login,
+        args=("google",),
+        type="primary",
+        use_container_width=True,
+    )
+    st.stop()
+
+# Use Google's stable account identifier to isolate each user's tasks.
+user_subject = st.user.get("sub")
+if not user_subject:
+    st.error(
+        "Google did not provide a user identifier. "
+        "Please sign out and sign in again."
+    )
+    st.stop()
+
+session_id = f"google:{user_subject}"
+
 create_tasks_table()
 
 # -------------------- Session state --------------------
-
-if "session_id" not in st.session_state:
-    st.session_state.session_id = str(uuid.uuid4())
 
 defaults = {
     "prepared_request": None,
@@ -47,8 +68,6 @@ defaults = {
 for key, value in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
-
-session_id = st.session_state.session_id
 
 
 # -------------------- Navigation callbacks --------------------
@@ -76,7 +95,7 @@ st.markdown(
 
     .block-container {
         max-width: 1500px;
-        padding: 2rem 2.4rem;
+        padding: 1rem 2rem 2rem;
     }
 
     [data-testid="stSidebar"] {
@@ -204,6 +223,15 @@ with st.sidebar:
     )
 
     st.divider()
+    st.caption(f"Signed in as {st.user.get('email', 'Google user')}")
+
+    if st.button(
+        "Sign out",
+        use_container_width=True,
+        key="sign_out_button",
+    ):
+        st.logout()
+
     st.caption("Less admin. More time for what matters.")
 
 
@@ -318,7 +346,9 @@ if page == "Overview":
                 b.caption(f"Priority: {task[3] or 'Medium'}")
                 c.caption(f"Status: {task[4]}")
     else:
-        st.info("You're all caught up. Add a task with the AI Assistant.")
+        st.info(
+            "You're all caught up. Add a task with the AI Assistant."
+        )
 
 
 # -------------------- AI Assistant --------------------
@@ -491,8 +521,10 @@ elif page == "AI Assistant":
                     key="approve_agent_action",
                 ):
                     try:
-                        if result.get("session_id") != st.session_state.session_id:
-                            st.error("Session mismatch. Prepare the request again.")
+                        if result.get("session_id") != session_id:
+                            st.error(
+                                "Session mismatch. Prepare the request again."
+                            )
                             st.stop()
 
                         approved_state = approve_request(result)
@@ -501,7 +533,9 @@ elif page == "AI Assistant":
                         )
 
                         st.session_state.agent_result = executed_state
-                        st.session_state.prepared_request = executed_state.__dict__
+                        st.session_state.prepared_request = (
+                            executed_state.__dict__
+                        )
                         st.session_state.pending_selection = None
 
                         st.success(executed_state.response)
@@ -519,7 +553,9 @@ elif page == "AI Assistant":
                     try:
                         rejected_state = reject_request(result)
                         st.session_state.agent_result = rejected_state
-                        st.session_state.prepared_request = rejected_state.__dict__
+                        st.session_state.prepared_request = (
+                            rejected_state.__dict__
+                        )
                         st.session_state.pending_selection = None
                         st.info("Action rejected. No changes were made.")
                         st.rerun()
@@ -558,7 +594,9 @@ elif page == "Documents":
                 st.error(f"Unable to analyze this PDF: {exc}")
 
     if st.session_state.document_name:
-        st.caption(f"Last selected document: {st.session_state.document_name}")
+        st.caption(
+            f"Last selected document: {st.session_state.document_name}"
+        )
 
     analysis = st.session_state.document_analysis
 
