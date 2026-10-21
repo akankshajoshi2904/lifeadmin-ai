@@ -46,14 +46,12 @@ class TestLifeAdminWorkflow(unittest.TestCase):
         result = self.run_request(
             "Complete my task named test LifeAdmin AI."
         )
-
         self.assertEqual(result["intent"], "complete_task")
 
     def test_workflow_requires_approval(self):
         result = self.run_request(
             "Complete my task named test LifeAdmin AI."
         )
-
         self.assertTrue(result["approval_required"])
         self.assertFalse(result["approved"])
         self.assertEqual(result["selected_task_id"], 9)
@@ -62,24 +60,31 @@ class TestLifeAdminWorkflow(unittest.TestCase):
         result = self.run_request(
             "Complete my task named test LifeAdmin AI."
         )
-
         self.assertIsInstance(result["plan"], list)
         self.assertIsInstance(result["tasks"], list)
         self.assertIsInstance(result["response"], str)
         self.assertTrue(result["response"])
-        self.assertEqual(result["plan"], ["Complete: test LifeAdmin AI"])
+        self.assertEqual(
+            result["plan"],
+            ["Complete: test LifeAdmin AI"],
+        )
 
     def test_named_task_is_selected(self):
         result = self.run_request(
             "Complete my task named test LifeAdmin AI."
         )
-
         self.assertEqual(result["intent"], "complete_task")
         self.assertEqual(result["selected_task_id"], 9)
-        self.assertEqual(result["plan"], ["Complete: test LifeAdmin AI"])
+        self.assertEqual(
+            result["plan"],
+            ["Complete: test LifeAdmin AI"],
+        )
         self.assertTrue(result["approval_required"])
         self.assertFalse(result["approved"])
-        self.assertIn("test LifeAdmin AI", result["selected_task"]["title"])
+        self.assertIn(
+            "test LifeAdmin AI",
+            result["selected_task"]["title"],
+        )
 
     def test_ambiguous_task_requires_clarification(self):
         self.tasks.append(
@@ -91,12 +96,53 @@ class TestLifeAdminWorkflow(unittest.TestCase):
                 "status": "Pending",
             }
         )
-
-        result = self.run_request("Complete my test LifeAdmin AI task.")
-
+        result = self.run_request(
+            "Complete my test LifeAdmin AI task."
+        )
         self.assertTrue(result["clarification_required"])
         self.assertFalse(result["approval_required"])
         self.assertIsNone(result["selected_task_id"])
+
+    def test_generic_complete_request_offers_pending_task_choices(self):
+        result = self.run_request("Complete my task")
+
+        self.assertEqual(result["intent"], "complete_task")
+        self.assertTrue(result["clarification_required"])
+        self.assertFalse(result["approval_required"])
+        self.assertFalse(result["approved"])
+        self.assertIsNone(result["selected_task_id"])
+
+        candidate_titles = [
+            task["title"] for task in result["candidate_tasks"]
+        ]
+
+        self.assertCountEqual(
+            candidate_titles,
+            [
+                "test LifeAdmin AI",
+                "submit my project report",
+            ],
+        )
+        self.assertIn("Reply with the number", result["response"])
+
+    def test_generic_complete_request_excludes_completed_tasks(self):
+        self.tasks.append(
+            {
+                "id": 12,
+                "title": "Already completed task",
+                "due_date": None,
+                "priority": "Low",
+                "status": "Completed",
+            }
+        )
+
+        result = self.run_request("Complete my task")
+        candidate_titles = [
+            task["title"] for task in result["candidate_tasks"]
+        ]
+
+        self.assertNotIn("Already completed task", candidate_titles)
+        self.assertFalse(result["approval_required"])
 
 
 if __name__ == "__main__":

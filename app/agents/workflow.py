@@ -1,3 +1,4 @@
+
 import re
 from datetime import datetime
 
@@ -86,9 +87,7 @@ def _extract_target_title(state: AgentState) -> str:
     """Extract the task reference from common action requests."""
     request = state.user_request.strip()
 
-    # FIX: Extract explicitly named tasks before broad action patterns.
-    # Example: "Complete my task named test LifeAdmin AI."
-    # Correct result: "test LifeAdmin AI"
+    # Explicitly named tasks take precedence over broad action patterns.
     named = re.search(
         r"\b(?:task|assignment|reminder)\s+"
         r"(?:named|called)\s+(.+?)[.!]?$",
@@ -200,9 +199,12 @@ def _eligible_tasks(state: AgentState) -> list:
 def _find_requested_task(state: AgentState):
     """Find one clear match or return candidates for clarification."""
     raw_target = _extract_target_title(state).strip()
+    eligible = _eligible_tasks(state)
 
+    # A generic request has no specific task title. Offer eligible choices
+    # instead of reporting no match. The user must still select and approve.
     if not raw_target:
-        return None, []
+        return None, eligible[:5]
 
     target = _normalize_title(raw_target)
     generic_words = {
@@ -217,9 +219,8 @@ def _find_requested_task(state: AgentState):
     }
 
     if not target_words:
-        return None, []
+        return None, eligible[:5]
 
-    eligible = _eligible_tasks(state)
     normalized_titles = {
         id(task): _normalize_title(task.get("title", ""))
         for task in eligible

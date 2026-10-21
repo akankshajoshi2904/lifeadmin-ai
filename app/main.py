@@ -1,4 +1,3 @@
-
 import sys
 from pathlib import Path
 from html import escape
@@ -73,8 +72,10 @@ for key, value in defaults.items():
 # -------------------- Navigation callbacks --------------------
 
 def navigate_to(page_name: str):
-    """Update the navigation radio through a pre-rerun callback."""
-    st.session_state.navigation_page = page_name
+    """Set the requested page before the next script run."""
+    allowed_pages = ["Overview", "AI Assistant", "Documents", "My Tasks"]
+    if page_name in allowed_pages:
+        st.session_state["navigation_page"] = page_name
 
 
 # -------------------- Styling --------------------
@@ -216,11 +217,27 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
+    navigation_options = [
+        "Overview",
+        "AI Assistant",
+        "Documents",
+        "My Tasks",
+    ]
+
+    current_page = st.session_state.get("navigation_page", "Overview")
+    if current_page not in navigation_options:
+        current_page = "Overview"
+
+    # Do not use navigation_page as the radio widget's key.
+    # This avoids modifying the radio's own state after it is instantiated.
     page = st.radio(
         "NAVIGATION",
-        ["Overview", "AI Assistant", "Documents", "My Tasks"],
-        key="navigation_page",
+        navigation_options,
+        index=navigation_options.index(current_page),
     )
+
+    # navigation_page is ordinary session state, not the radio's widget key.
+    st.session_state["navigation_page"] = page
 
     st.divider()
     st.caption(f"Signed in as {st.user.get('email', 'Google user')}")
@@ -463,7 +480,9 @@ elif page == "AI Assistant":
                 st.rerun()
 
         except Exception as exc:
-            st.error(f"The assistant couldn't prepare this request: {exc}")
+            st.error(
+                f"The assistant couldn't prepare this request: {exc}"
+            )
 
     result = st.session_state.prepared_request
 
@@ -471,7 +490,9 @@ elif page == "AI Assistant":
         if result.get("session_id") != session_id:
             st.session_state.prepared_request = None
             st.session_state.pending_selection = None
-            st.warning("Session mismatch. Please prepare your request again.")
+            st.warning(
+                "Session mismatch. Please prepare your request again."
+            )
             st.stop()
 
         st.write("")
@@ -542,7 +563,9 @@ elif page == "AI Assistant":
                         st.rerun()
 
                     except Exception as exc:
-                        st.error(f"The action could not be executed: {exc}")
+                        st.error(
+                            f"The action could not be executed: {exc}"
+                        )
 
             with c2:
                 if st.button(
@@ -557,11 +580,15 @@ elif page == "AI Assistant":
                             rejected_state.__dict__
                         )
                         st.session_state.pending_selection = None
-                        st.info("Action rejected. No changes were made.")
+                        st.info(
+                            "Action rejected. No changes were made."
+                        )
                         st.rerun()
 
                     except Exception as exc:
-                        st.error(f"The action could not be rejected: {exc}")
+                        st.error(
+                            f"The action could not be rejected: {exc}"
+                        )
 
         elif result.get("current_step") == "Task executed":
             st.success(result.get("response", "Action completed."))
@@ -586,7 +613,9 @@ elif page == "Documents":
                     st.session_state.document_text = text
 
                     if text and text.strip():
-                        st.session_state.document_analysis = analyze_document(text)
+                        st.session_state.document_analysis = analyze_document(
+                            text
+                        )
                     else:
                         st.session_state.document_analysis = None
 
