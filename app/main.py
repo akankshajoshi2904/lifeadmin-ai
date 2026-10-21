@@ -1,3 +1,4 @@
+
 import sys
 import uuid
 from pathlib import Path
@@ -48,6 +49,14 @@ for key, value in defaults.items():
         st.session_state[key] = value
 
 session_id = st.session_state.session_id
+
+
+# -------------------- Navigation callbacks --------------------
+
+def navigate_to(page_name: str):
+    """Update the navigation radio through a pre-rerun callback."""
+    st.session_state.navigation_page = page_name
+
 
 # -------------------- Styling --------------------
 
@@ -175,6 +184,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
 # -------------------- Sidebar --------------------
 
 with st.sidebar:
@@ -195,6 +205,7 @@ with st.sidebar:
 
     st.divider()
     st.caption("Less admin. More time for what matters.")
+
 
 # -------------------- Shared data --------------------
 
@@ -251,6 +262,7 @@ else:
 
 st.write("")
 
+
 # -------------------- Overview --------------------
 
 if page == "Overview":
@@ -271,19 +283,26 @@ if page == "Overview":
         with st.container(border=True):
             st.subheader("AI Assistant")
             st.write("Create, update, complete, or delete tasks.")
-            if st.button("Open assistant", type="primary",
-                         use_container_width=True):
-                st.session_state.navigation_page = "AI Assistant"
-                st.rerun()
+            st.button(
+                "Open assistant",
+                type="primary",
+                use_container_width=True,
+                on_click=navigate_to,
+                args=("AI Assistant",),
+                key="open_assistant_button",
+            )
 
     with c2:
         with st.container(border=True):
             st.subheader("Document Intelligence")
             st.write("Find dates and actions in a PDF.")
-            if st.button("Analyze a document",
-                         use_container_width=True):
-                st.session_state.navigation_page = "Documents"
-                st.rerun()
+            st.button(
+                "Analyze a document",
+                use_container_width=True,
+                on_click=navigate_to,
+                args=("Documents",),
+                key="open_documents_button",
+            )
 
     st.markdown("### Your next tasks")
 
@@ -300,6 +319,7 @@ if page == "Overview":
                 c.caption(f"Status: {task[4]}")
     else:
         st.info("You're all caught up. Add a task with the AI Assistant.")
+
 
 # -------------------- AI Assistant --------------------
 
@@ -510,6 +530,7 @@ elif page == "AI Assistant":
         elif result.get("current_step") == "Task executed":
             st.success(result.get("response", "Action completed."))
 
+
 # -------------------- Documents --------------------
 
 elif page == "Documents":
@@ -563,6 +584,7 @@ elif page == "Documents":
             "No readable text was extracted. Scanned PDFs may require OCR."
         )
 
+
 # -------------------- My Tasks --------------------
 
 elif page == "My Tasks":
@@ -602,6 +624,7 @@ elif page == "My Tasks":
                 st.caption(f"Task ID: {task_id}")
     else:
         st.info("No tasks match this filter.")
+
 
 # -------------------- Footer --------------------
 
