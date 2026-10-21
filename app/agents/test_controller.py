@@ -1,5 +1,6 @@
 
 import unittest
+from unittest.mock import patch
 
 from app.agents.controller import (
     prepare_request,
@@ -16,13 +17,16 @@ class TestController(unittest.TestCase):
             "by 20 October 2026."
         )
 
-    def test_prepare_request_requires_approval(self):
+    @patch("app.agents.workflow.get_memory", return_value=[])
+    def test_prepare_request_requires_approval(self, mock_get_memory):
         state = prepare_request(self.request)
 
         self.assertTrue(state["approval_required"])
         self.assertFalse(state["approved"])
+        mock_get_memory.assert_called_once()
 
-    def test_approve_request(self):
+    @patch("app.agents.workflow.get_memory", return_value=[])
+    def test_approve_request(self, mock_get_memory):
         state = prepare_request(self.request)
 
         approved_state = approve_request(state)
@@ -32,6 +36,7 @@ class TestController(unittest.TestCase):
             approved_state.current_step,
             "Action approved",
         )
+        mock_get_memory.assert_called_once()
 
 
 if __name__ == "__main__":

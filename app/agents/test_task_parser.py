@@ -1,7 +1,10 @@
 
 import unittest
 
-from app.agents.task_parser import extract_task_title
+from app.agents.task_parser import (
+    extract_task_title,
+    extract_requested_priority,
+)
 
 
 class TestTaskParser(unittest.TestCase):
@@ -39,7 +42,7 @@ class TestTaskParser(unittest.TestCase):
     def test_task_title_with_due_date(self):
         self.assertEqual(
             extract_task_title(
-                "Create a task to submit my project report by 5 October 2026."
+                "Create a task to submit my project report by 5 October2026."
             ),
             "submit my project report",
         )
@@ -50,6 +53,30 @@ class TestTaskParser(unittest.TestCase):
                 "Remind me to pay the bill on 12 November 2026."
             ),
             "pay the bill",
+        )
+
+    def test_extract_high_priority(self):
+        self.assertEqual(
+            extract_requested_priority(
+                "Create a task called Test LifeAdmin with high priority"
+            ),
+            "High",
+        )
+
+    def test_extract_medium_priority(self):
+        self.assertEqual(
+            extract_requested_priority(
+                "Create a task called Test LifeAdmin with medium priority"
+            ),
+            "Medium",
+        )
+
+    def test_extract_low_priority(self):
+        self.assertEqual(
+            extract_requested_priority(
+                "Create a task called Test LifeAdmin with low priority"
+            ),
+            "Low",
         )
 
 

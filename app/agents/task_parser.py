@@ -6,7 +6,7 @@ DATE_PATTERN = (
     r"\d{1,2}\s+"
     r"(?:January|February|March|April|May|June|July|August|"
     r"September|October|November|December)"
-    r"\s+\d{4}"
+    r"\s*\d{4}"
 )
 
 RELATIVE_DATE_PATTERN = (
@@ -24,7 +24,7 @@ def extract_requested_priority(user_request: str):
 
     patterns = [
         r"\bpriority\s+(?:to|as|is)\s+(low|medium|high)\b",
-        r"\b(?:low|medium|high)\s+priority\b",
+        r"\b(low|medium|high)\s+priority\b",
         r"\b(?:set|change|make|mark|update|lower|raise|"
         r"increase|decrease)\b.{0,100}?\bto\s+(low|medium|high)\b",
         r"\b(?:make it|mark it|set it to)\s+(low|medium|high)\b",
@@ -108,7 +108,11 @@ def extract_task_title(user_request: str) -> str:
 
     for prefix in prefixes:
         request = re.sub(
-            prefix, "", request, count=1, flags=re.IGNORECASE
+            prefix,
+            "",
+            request,
+            count=1,
+            flags=re.IGNORECASE,
         )
 
     # Remove trailing metadata instructions.
@@ -142,6 +146,7 @@ def extract_task_title(user_request: str) -> str:
         request,
         flags=re.IGNORECASE,
     )
+
     request = re.sub(
         rf"\s+{DATE_PATTERN}\b",
         "",
@@ -156,6 +161,7 @@ def extract_task_title(user_request: str) -> str:
         request,
         flags=re.IGNORECASE,
     )
+
     request = re.sub(
         rf"\s+{RELATIVE_DATE_PATTERN}\b",
         "",
@@ -164,6 +170,7 @@ def extract_task_title(user_request: str) -> str:
     )
 
     request = re.sub(r"\s+", " ", request).strip()
+
     request = re.sub(
         r"^(?:to|for)\s+",
         "",
@@ -172,3 +179,16 @@ def extract_task_title(user_request: str) -> str:
     )
 
     return request.strip(" \t\r\n\"'.,;:!?-")
+
+
+if __name__ == "__main__":
+    examples = [
+        "Create a task to submit my project report by 5 October2026.",
+        "Create a task called Test LifeAdmin with high priority",
+    ]
+
+    for example in examples:
+        print("Request:", example)
+        print("Title:", extract_task_title(example))
+        print("Priority:", extract_requested_priority(example))
+        print()
